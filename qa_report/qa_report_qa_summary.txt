@@ -1,0 +1,20 @@
+Total rows: 26328
+
+Columns with missing values (top 10):
+                                    missing_count  missing_pct
+Day-ahead Total Load Forecast (MW)             26     0.098754
+Actual Total Load (MW)                         24     0.091158
+Biomass                                        24     0.091158
+Fossil Brown coal/Lignite                      24     0.091158
+Hydro Pumped Storage                           24     0.091158
+Hydro Run-of-river and pondage                 24     0.091158
+Other                                          24     0.091158
+Fossil Coal-derived gas                        24     0.091158
+Fossil Gas                                     24     0.091158
+Fossil Hard coal                               24     0.091158
+
+Duplicate MTU rows: 0
+
+Full duplicate rows: 0
+
+Missing hourly timestamps: 0
