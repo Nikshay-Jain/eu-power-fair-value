@@ -1,0 +1,21 @@
+feature,importance
+residual_load_mw,44330.78982779384
+Fossil Brown coal/Lignite,14157.289583057165
+Other,9734.135146856308
+Fossil Hard coal,8120.549191037193
+Fossil Gas,6292.769635006785
+Biomass,6248.590563006699
+Hydro Pumped Storage,5326.407617524266
+resload_rolling_mean_24h,4918.655719138682
+Solar,4251.1475662738085
+renewable_penetration,4134.21260407567
+resload_lag_168h,3542.045854240656
+resload_lag_24h,3134.6796837449074
+Day-ahead Total Load Forecast (MW),3078.255292534828
+Actual Total Load (MW),2682.6225894391537
+Wind Onshore,2617.0054730176926
+wind_total_mw,2599.6385664343834
+resload_x_hour,2461.649009153247
+total_renewable_mw,2034.6940632760525
+renew_pen_x_hour,1995.0920835211873
+solar_mw,735.4064019918442
