@@ -1,8 +1,9 @@
 ,missing_count,missing_pct
 Day-ahead Total Load Forecast (MW),26,0.09875417806137951
 Actual Total Load (MW),24,0.09115770282588878
-Biomass,24,0.09115770282588878
 Fossil Brown coal/Lignite,24,0.09115770282588878
+Biomass,24,0.09115770282588878
+Day-ahead Price (EUR/MWh),24,0.09115770282588878
 Hydro Pumped Storage,24,0.09115770282588878
 Hydro Run-of-river and pondage,24,0.09115770282588878
 Other,24,0.09115770282588878
