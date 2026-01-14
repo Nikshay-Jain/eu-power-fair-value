@@ -2,7 +2,9 @@ pandas
 numpy
 matplotlib
 seaborn
-python-dotenv
+holidays
 lightgbm
 scikit-learn
-holidays
+python-dotenv
+langchain
+langchain_google_genai
