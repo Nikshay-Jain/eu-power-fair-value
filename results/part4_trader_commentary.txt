@@ -1,7 +1,11 @@
-**Daily DE-LU Power Market Briefing - 2026-01-14**
+The Week 1 P50 indicates a +14.53 EUR/MWh positive direction against the forward. Our P50 is 89.53 EUR/MWh, while the forward is 75.0 EUR/MWh.
 
-Good morning team, our models are generating a strong **LONG** signal for the DE-LU power market for today, 2026-01-14. The fair value (P50) is estimated at 89.53 EUR/MWh, significantly above the current forward price of 75.0 EUR/MWh. This indicates a substantial potential edge of 14.53 EUR/MWh, suggesting the market is currently underpricing the expected spot value.
+The top drivers are residual_load_mw, Fossil Brown coal/Lignite, and Other. Residual_load_mw shows a recent delta of -77.5%, while Fossil Brown coal/Lignite and Other have no reliable recent delta.
 
-The primary drivers behind this upward price prediction are centered around conventional generation requirements and system fundamentals. The model highlights `residual_load_mw` as the most significant factor, indicating a tight balance between demand and non-dispatchable supply, necessitating increased reliance on thermal generation. This is further supported by the strong influence of `Fossil Brown coal/Lignite`, `Other`, `Fossil Hard coal`, and `Fossil Gas` in the top five drivers, collectively pointing to a scenario where higher-cost or constrained fossil fuel generation is expected to set the marginal price.
+The win probability for this position is 96.7%. Evidence is provided by the listed files.
 
-Our confidence in this signal is exceptionally high, with a win probability of 96.7%. This robust output is derived from our latest analysis, with detailed feature importance available in 'part2_feature_importance.csv' and the full trading signals outlined in 'part3_trading_signals.csv'. We recommend evaluating long positions given these strong indicators.
+EVIDENCE:
+- importance_file: part2_feature_importance.csv
+- predictions_file: part2_final_predictions.csv
+- signals_file: part3_trading_signals.csv
+- feature_data_file: featured_energy_data.csv

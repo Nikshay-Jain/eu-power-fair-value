@@ -1,0 +1,73 @@
+{
+  "facts": {
+    "timestamp": "2026-01-14T12:41:49.062122Z",
+    "period": "Week 1",
+    "p50": 89.53218135492895,
+    "p10": 88.24026976015772,
+    "p90": 90.8204189834999,
+    "edge": 14.532181354928952,
+    "probability": 0.9670358668062282,
+    "forward_price": 75.0,
+    "signal": "LONG",
+    "top_features": [
+      {
+        "feature": "residual_load_mw",
+        "importance": 44330.78982779384,
+        "share_pct": 33.483573182158786
+      },
+      {
+        "feature": "Fossil Brown coal/Lignite",
+        "importance": 14157.289583057163,
+        "share_pct": 10.69316932219657
+      },
+      {
+        "feature": "Other",
+        "importance": 9734.135146856308,
+        "share_pct": 7.352308132133444
+      },
+      {
+        "feature": "Fossil Hard coal",
+        "importance": 8120.549191037193,
+        "share_pct": 6.133547454797193
+      },
+      {
+        "feature": "Fossil Gas",
+        "importance": 6292.769635006785,
+        "share_pct": 4.753003801888324
+      }
+    ],
+    "driver_deltas": {
+      "residual_load_mw": {
+        "valid": true,
+        "latest": 6591.601249999999,
+        "delta_pct": -77.50471452232783
+      },
+      "Fossil Brown coal/Lignite": {
+        "valid": false
+      },
+      "Other": {
+        "valid": false
+      },
+      "Fossil Hard coal": {
+        "valid": true,
+        "latest": 2437.7801041666667,
+        "delta_pct": -4.6853926903948695
+      },
+      "Fossil Gas": {
+        "valid": true,
+        "latest": 4022.6775000000002,
+        "delta_pct": -56.48095677589191
+      }
+    },
+    "evidence": {
+      "importance_file": "part2_feature_importance.csv",
+      "predictions_file": "part2_final_predictions.csv",
+      "signals_file": "part3_trading_signals.csv",
+      "feature_data_file": "featured_energy_data.csv"
+    }
+  },
+  "generated_at": "2026-01-14T12:41:55.170079Z",
+  "narrative": "The Week 1 P50 indicates a +14.53 EUR/MWh positive direction against the forward. Our P50 is 89.53 EUR/MWh, while the forward is 75.0 EUR/MWh.\n\nThe top drivers are residual_load_mw, Fossil Brown coal/Lignite, and Other. Residual_load_mw shows a recent delta of -77.5%, while Fossil Brown coal/Lignite and Other have no reliable recent delta.\n\nThe win probability for this position is 96.7%. Evidence is provided by the listed files.\n\nEVIDENCE:\n- importance_file: part2_feature_importance.csv\n- predictions_file: part2_final_predictions.csv\n- signals_file: part3_trading_signals.csv\n- feature_data_file: featured_energy_data.csv",
+  "narrative_type": "LLM",
+  "llm_info": "LLM invoked"
+}

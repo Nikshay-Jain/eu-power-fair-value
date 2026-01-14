@@ -64,3 +64,42 @@
 2026-01-14 17:30:56,320 - INFO - AFC is enabled with max remote calls: 10.
 2026-01-14 17:31:03,223 - INFO - HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
 2026-01-14 17:31:03,229 - INFO - Commentary successfully generated.
+2026-01-14 17:46:47,666 - INFO - Part4_improved started
+2026-01-14 17:46:48,138 - INFO - Invoking LLM with strict prompt.
+2026-01-14 17:46:48,248 - INFO - AFC is enabled with max remote calls: 10.
+2026-01-14 17:46:55,997 - INFO - HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-01-14 17:46:56,031 - WARNING - LLM narrative failed factuality checks: [('drv_3', -4.6853926903948695)]; falling back to deterministic note.
+2026-01-14 17:53:23,880 - INFO - Part4_improved started
+2026-01-14 17:53:24,272 - INFO - Invoking LLM with strict prompt.
+2026-01-14 17:53:24,394 - INFO - AFC is enabled with max remote calls: 10.
+2026-01-14 17:53:31,922 - INFO - HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-01-14 17:59:18,168 - INFO - Part4_improved started
+2026-01-14 17:59:18,515 - INFO - Invoking LLM with strict prompt.
+2026-01-14 17:59:18,606 - INFO - AFC is enabled with max remote calls: 10.
+2026-01-14 17:59:23,963 - INFO - HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-01-14 18:07:01,778 - INFO - Part4_improved started
+2026-01-14 18:07:02,209 - INFO - Invoking LLM with strict prompt.
+2026-01-14 18:07:02,382 - ERROR - LLM generation failed
+Traceback (most recent call last):
+  File "c:\Users\niksh\Desktop\cobblestone\gp.py", line 405, in llm_generate
+    res = llm.invoke(prompt)
+          ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\niksh\Desktop\cobblestone\.venv\Lib\site-packages\langchain_google_genai\chat_models.py", line 2535, in invoke
+    return super().invoke(input, config, stop=stop, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\niksh\Desktop\cobblestone\.venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 403, in invoke
+    [self._convert_input(input)],
+     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\niksh\Desktop\cobblestone\.venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 386, in _convert_input
+    raise ValueError(msg)
+ValueError: Invalid input type <class 'langchain_core.prompts.prompt.PromptTemplate'>. Must be a PromptValue, str, or list of BaseMessages.
+2026-01-14 18:07:02,405 - WARNING - LLM unavailable or failed: LLM failure: Invalid input type <class 'langchain_core.prompts.prompt.PromptTemplate'>. Must be a PromptValue, str, or list of BaseMessages.; falling back to deterministic note.
+2026-01-14 18:09:24,970 - INFO - Part4_improved started
+2026-01-14 18:09:25,358 - INFO - Invoking LLM with strict prompt.
+2026-01-14 18:09:25,442 - INFO - AFC is enabled with max remote calls: 10.
+2026-01-14 18:09:30,479 - INFO - HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-01-14 18:09:30,502 - WARNING - LLM narrative failed factuality checks: [('forward', 75.0)]; skipped checks: [('Fossil Brown coal/Lignite', 'no valid delta'), ('Other', 'no valid delta'), ('Fossil Hard coal', 'not mentioned in narrative'), ('Fossil Gas', 'not mentioned in narrative')]; falling back.
+2026-01-14 18:11:48,794 - INFO - Part4_improved started
+2026-01-14 18:11:49,126 - INFO - Invoking LLM with strict prompt.
+2026-01-14 18:11:49,231 - INFO - AFC is enabled with max remote calls: 10.
+2026-01-14 18:11:55,124 - INFO - HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"

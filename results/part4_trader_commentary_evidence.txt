@@ -1,0 +1,27 @@
+Evidence & pointers for trader verification
+=========================================
+importance_file: results/part2_feature_importance.csv
+predictions_file: results/part2_final_predictions.csv
+signals_file: results/part3_trading_signals.csv
+feature_data_file: results/featured_energy_data.csv
+
+Top features (global importance):
+  - residual_load_mw: importance=44330.79, share=33.5%
+  - Fossil Brown coal/Lignite: importance=14157.29, share=10.7%
+  - Other: importance=9734.14, share=7.4%
+  - Fossil Hard coal: importance=8120.55, share=6.1%
+  - Fossil Gas: importance=6292.77, share=4.8%
+
+Driver deltas (computed from data/featured_energy_data.csv if available):
+  - residual_load_mw: latest=6591.601, delta_pct=-77.50%
+  - Fossil Brown coal/Lignite: no reliable recent data
+  - Other: no reliable recent data
+  - Fossil Hard coal: latest=2437.780, delta_pct=-4.69%
+  - Fossil Gas: latest=4022.678, delta_pct=-56.48%
+
+Deterministic note (for audit):
+Bullish signal for Week 1 (+14.53 EUR/MWh vs forward). Model fair-value (P50) = 89.53 EUR/MWh; forward = 75.00 EUR/MWh.
+
+Top drivers: residual_load_mw (model importance 33.5%): -77.5% recent change. Fossil Brown coal/Lignite (model importance 10.7%). Other (model importance 7.4%). Fossil Hard coal (model importance 6.1%): -4.7% recent change. Fossil Gas (model importance 4.8%): -56.5% recent change.
+
+Win probability (adj) = 96.7%. Evidence: see 'part2_feature_importance.csv' (feature ranks) and 'part3_trading_signals.csv' (signal row). Invalidation: monitor wind/solar forecasts and forward moves > ±3 EUR/MWh.
