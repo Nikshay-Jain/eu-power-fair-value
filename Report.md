@@ -51,9 +51,22 @@ Automated QA outputs are produced in `qa_report/`, including:
 
 This ensures downstream modeling receives a consistent, auditable dataset.
 
+
 **Primary Output**
 
 - `data/cleaned_energy_data.csv` — QA-cleaned hourly dataset  
+
+#### Data QA and Correlation Visuals
+
+<p align="center">
+<img src="figures/corr_heatmap.png" alt="Correlation Heatmap" width="500"/>
+</p>
+<p align="center">
+<img src="figures/corr_target_bar.png" alt="Target Correlation Bar" width="500"/>
+</p>
+<p align="center">
+<img src="figures/feature_vs_target_timeseries_grid.png" alt="Feature vs Target Timeseries Grid" width="700"/>
+</p>
 
 ---
 
@@ -96,10 +109,17 @@ Walk-forward cross-validation ensures realistic out-of-sample testing without le
 - MAE / RMSE on price levels  
 - Tail MAE on extreme price hours  
 
+
 Model performance summaries are saved as:
 
 - `results/part2_cv_summary.csv`  
 - `results/part2_forecasting_results.png`  
+
+#### Forecasting Results Visualization
+
+<p align="center">
+<img src="results/part2_forecasting_results.png" alt="Forecasting Results" width="800"/>
+</p>
 
 ### Feature Importance Insights
 
@@ -114,8 +134,6 @@ Top global drivers:
 - **Gas** — 4.8%  
 
 These align with expected merit-order price formation in European markets.  
-
-:contentReference[oaicite:0]{index=0}
 
 ### Final Forecast Output
 
@@ -176,8 +194,6 @@ Each signal is paired with:
 - Position: **~19 MW baseload**  
 - Expected P&L: **~32k EUR (conservative)**  
 
-:contentReference[oaicite:1]{index=1}
-
 **Month 1 Delivery**
 
 - P50 forecast: **105.26 EUR/MWh**  
@@ -188,7 +204,12 @@ Each signal is paired with:
 
 Similar structured signals are produced for Weeks 1–4 and Months 1–3.
 
+
 ### Visual Signal Dashboard
+
+<p align="center">
+<img src="results/part3_trading_signals.png" alt="Prompt Curve Trading Signal Dashboard" width="900"/>
+</p>
 
 `results/part3_trading_signals.png` illustrates:
 
@@ -224,8 +245,6 @@ A programmatic LLM module (`part_4.py`) automates daily trader notes.
 > *Bullish signal for Week 1 (+14.53 EUR/MWh vs forward). Model fair-value (P50) = 89.53 EUR/MWh; forward = 75.00 EUR/MWh.  
 > Top drivers: residual_load_mw (33.5% model importance): −77.5% recent change.  
 > Win probability = 96.7%. Monitor wind forecast revisions and forward moves > ±3 EUR/MWh.*
-
-:contentReference[oaicite:2]{index=2}
 
 ### AI Audit Outputs
 
