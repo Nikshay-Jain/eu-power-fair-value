@@ -1,32 +1,29 @@
-```markdown
 # European Power Fair Value  
-**Day-Ahead Price Forecasting and Prompt Curve Trading Signals**
+### Day-Ahead Price Forecasting and Prompt Curve Trading Signals
 
-End-to-end prototype pipeline that builds a fundamental European power dataset, forecasts Day-Ahead electricity prices, validates models with walk-forward cross-validation, and translates forecast distributions into prompt-curve trading signals with automated risk controls and AI-generated trader commentary.
+A complete, reproducible research and trading prototype that builds a fundamental European power dataset, forecasts Day-Ahead electricity prices, validates models with time-series cross-validation, and translates probabilistic forecasts into prompt-curve trading signals with automated risk controls and AI-generated trader commentary.
 
 ---
 
-## Overview
+## Project Summary
 
-The project implements a realistic energy trading research workflow:
+This project mirrors a real energy trading desk workflow:
 
-- Public ENTSO-E data ingestion and cleaning  
-- Robust data QA and imputation  
-- Feature engineering grounded in power system fundamentals  
-- Baseline and ML-based Day-Ahead price forecasting  
-- Walk-forward time-series validation and performance reporting  
-- Probabilistic forecast → prompt-curve signal translation  
-- Automated trader-style commentary using an LLM with fact-checking  
+- Ingests and cleans public ENTSO-E power market data  
+- Performs rigorous data QA and feature engineering  
+- Builds baseline and ML forecasting models for Day-Ahead prices  
+- Validates performance using walk-forward cross-validation  
+- Converts forecast distributions into tradable curve signals  
+- Generates automated trader commentary using a controlled LLM  
 
-The pipeline is fully reproducible and produces all tables, figures, and signal reports used for trading interpretation.
+All steps are deterministic, auditable, and produce ready-to-review artifacts.
 
 ---
 
 ## Repository Structure
 
 ```
-
-.
+root
 ├── data/
 │   ├── generation.zip
 │   ├── load.zip
@@ -60,90 +57,88 @@ The pipeline is fully reproducible and produces all tables, figures, and signal 
 │   └── part4_ai_log.txt
 │
 ├── submission.csv
-├── part_1.py   # Data ingestion, stacking, QA, cleaning
+├── part_1.py   # Data ingestion, cleaning, QA
 ├── part_2.py   # Feature engineering, forecasting, validation
 ├── part_3.py   # Prompt-curve signal generation
 ├── part_4.py   # AI-driven trader commentary
 ├── nb.ipynb    # Optional exploration notebook
 ├── requirements.txt
 └── README.md
-
 ```
 
 ---
 
-## Pipeline Stages
+## Pipeline Overview
 
 ### Part 1 — Data Ingestion & QA (`part_1.py`)
 
 - Loads raw ENTSO-E ZIP archives  
-- Enforces strict hourly granularity and DST-safe timestamps  
-- Merges price, load, generation, and flow data  
-- Generates automated QA reports:
-  - Missingness and coverage
-  - Duplicate timestamps
-  - Outliers and negative-value checks  
-- Imputes remaining gaps using time-series aware methods  
-- Outputs:
-  - `data/cleaned_energy_data.csv`
-  - `qa_report/*`
+- Aligns price, load, generation, and flow data at hourly granularity  
+- Handles timezone and DST safely  
+- Performs automated QA:
+  - Missing data coverage  
+  - Duplicate timestamps  
+  - Outlier and negative-value detection  
+- Applies gap-filling where required  
+
+**Outputs**
+- `data/cleaned_energy_data.csv`  
+- `qa_report/*`
 
 ---
 
 ### Part 2 — Forecasting & Validation (`part_2.py`)
 
 - Builds fundamental features:
-  - Residual load
-  - Renewable penetration
-  - Lags and rolling statistics
+  - Residual load  
+  - Renewable penetration  
+  - Lags and rolling statistics  
   - Interaction terms  
 - Runs walk-forward cross-validation:
-  - Naive 24h baseline
-  - Naive 168h baseline
-  - Ridge regression
-  - LightGBM (point + quantile forecasts)  
-- Reports:
-  - MAE / RMSE
-  - Tail MAE (P90 hours)  
-- Trains final quantile LightGBM model  
-- Outputs:
-  - `results/part2_cv_summary.csv`
-  - `results/part2_final_predictions.csv`
-  - `results/part2_feature_importance.csv`
-  - `results/part2_forecasting_results.png`
-  - `submission.csv`
+  - Naive 24h baseline  
+  - Naive 168h baseline  
+  - Regularized regression  
+  - LightGBM with quantile forecasts  
+- Reports MAE / RMSE and tail performance  
+- Trains final quantile forecasting model  
+
+**Outputs**
+- `results/part2_cv_summary.csv`  
+- `results/part2_final_predictions.csv`  
+- `results/part2_feature_importance.csv`  
+- `results/part2_forecasting_results.png`  
+- `submission.csv`
 
 ---
 
 ### Part 3 — Prompt Curve Translation (`part_3.py`)
 
-Transforms hourly probabilistic forecasts into tradable delivery-period views.
+Transforms hourly probabilistic forecasts into delivery-period trading views.
 
-Key components:
+**Core logic**
 
 - Monte-Carlo aggregation of hourly quantiles into weekly/monthly price distributions  
-- Forward-price comparison (real or fallback proxy)  
-- Computed metrics:
-  - Expected period mean (P50)
-  - Distribution bands (P10 / P90)
-  - Edge vs forward
-  - Win probability (MC-based, uncertainty-penalized)
-  - Sharpe-like score
-  - Confidence-weighted position sizing (MW)
+- Forward-price comparison (real or proxy)  
+- Computed trading metrics:
+  - Expected period mean (P50)  
+  - Distribution bands (P10 / P90)  
+  - Edge versus forward price  
+  - Monte-Carlo win probability  
+  - Sharpe-like risk metric  
+  - Confidence-weighted MW position sizing  
   - Conservative expected P&L  
-- Risk and signal invalidation logic:
-  - Edge erosion
-  - Low confidence
-  - Wide forecast bands
+- Automated risk and invalidation rules:
+  - Edge erosion  
+  - Low confidence  
+  - Wide uncertainty bands  
   - Quantile calibration warnings  
 
-Outputs:
-
-- `results/part3_trading_signals.csv`
-- `results/part3_trading_reports.txt`
+**Outputs**
+- `results/part3_trading_signals.csv`  
+- `results/part3_trading_reports.txt`  
 - `results/part3_trading_signals.png`
 
-These provide a complete DA → curve-trading decision framework.
+These deliver a complete Day-Ahead → prompt-curve trading decision framework.
 
 ---
 
@@ -152,15 +147,14 @@ These provide a complete DA → curve-trading decision framework.
 Programmatic LLM component that:
 
 - Reads model outputs and selected trading signal  
-- Builds a deterministic factual morning note  
-- Optionally refines tone using an LLM (if API key provided)  
+- Builds a factual morning-note template  
+- Optionally refines tone using an LLM (if API key supplied)  
 - Performs numeric fact-checking to prevent hallucinated values  
-- Logs prompts, outputs, and validation results  
+- Logs prompts, responses, and validation results  
 
-Outputs:
-
-- `results/part4_trader_commentary.txt`
-- `results/part4_trader_commentary.json`
+**Outputs**
+- `results/part4_trader_commentary.txt`  
+- `results/part4_trader_commentary.json`  
 - `results/part4_ai_log.txt`
 
 ---
@@ -170,61 +164,49 @@ Outputs:
 ### 1. Clone Repository
 
 ```
-
-git clone [https://github.com/Nikshay-Jain/eu-power-fair-value.git](https://github.com/Nikshay-Jain/eu-power-fair-value.git)
+git clone https://github.com/Nikshay-Jain/eu-power-fair-value.git
 cd eu-power-fair-value
-
 ```
 
-### 2. Create Environment
+### 2. Create Virtual Environment
 
 ```
-
 python -m venv .venv
-source .venv/bin/activate   # (Windows: .venv\Scripts\activate)
-
+source .venv/bin/activate     # Windows: .venv\Scripts\activate
 ```
 
 ### 3. Install Dependencies
 
 ```
-
 pip install -r requirements.txt
-
 ```
 
 ### 4. (Optional) Enable AI Commentary
 
-If using the LLM commentary module, set:
-
 ```
-
 export GOOGLE_API_KEY="your_api_key_here"
-
 ```
 
-No API key is required to run the rest of the pipeline.
+If no API key is provided, the pipeline still runs with deterministic commentary.
 
 ---
 
-## Running the Full Pipeline
+## Running the Pipeline
 
-Execute in sequence:
-
-```
-
-python part_1.py   # Data ingestion + QA + cleaning
-python part_2.py   # Feature engineering + forecasting + validation
-python part_3.py   # Prompt-curve trading signals
-python part_4.py   # AI-generated trader commentary
+Execute sequentially:
 
 ```
+python part_1.py   # Data ingestion + QA
+python part_2.py   # Forecasting + validation
+python part_3.py   # Prompt-curve signal generation
+python part_4.py   # AI trader commentary
+```
 
-All intermediate and final artifacts are written to `/data`, `/qa_report`, and `/results`.
+All outputs are written to `data/`, `qa_report/`, and `results/`.
 
 ---
 
-## Key Outputs
+## Key Artifacts
 
 | File | Description |
 |------|-------------|
@@ -233,51 +215,31 @@ All intermediate and final artifacts are written to `/data`, `/qa_report`, and `
 | `results/part2_cv_summary.csv` | Walk-forward model performance |
 | `results/part2_final_predictions.csv` | Final quantile forecasts |
 | `results/part3_trading_signals.csv` | Weekly/monthly trading signals |
-| `results/part3_trading_reports.txt` | Human-readable trading reports |
-| `results/part3_trading_signals.png` | Signal visualization dashboard |
+| `results/part3_trading_reports.txt` | Human-readable trading notes |
+| `results/part3_trading_signals.png` | Signal dashboard |
 | `results/part4_trader_commentary.txt` | Automated trader morning note |
-| `submission.csv` | Out-of-sample DA price predictions |
+| `submission.csv` | Out-of-sample predictions |
 
 ---
 
-## Reproducibility Notes
+## Trading Interpretation
 
-- All timestamps handled in UTC with explicit DST-safe parsing  
-- Random seeds fixed for Monte-Carlo simulations  
-- No external paid data required  
-- All model training uses deterministic configurations  
-
----
-
-## Trading Interpretation Summary
-
-The produced signals express how forecasted Day-Ahead fundamentals map into prompt-curve positioning:
+The produced signals express how forecasted Day-Ahead fundamentals map into curve positioning:
 
 - Positive edge → long prompt baseload  
 - Negative edge → short prompt baseload  
-- Position size scales with confidence and signal-to-noise  
-- Explicit invalidation triggers guide risk reduction  
+- Position sizing scales with confidence and signal-to-noise  
+- Explicit invalidation rules guide risk reduction  
 
-This mirrors real desk workflows for DA-to-curve fair-value trading.
-
----
-
-## Requirements
-
-- Python ≥ 3.9  
-- pandas, numpy, scikit-learn  
-- lightgbm  
-- matplotlib, seaborn  
-- scipy  
-- python-dotenv  
-- langchain-google-genai (optional)
-
-See `requirements.txt` for exact versions.
+This structure reflects real DA-to-curve fair-value trading practice.
 
 ---
 
-## Author
+## Reproducibility
 
-Nikshay Jain  
-Energy Markets & Applied ML
-```
+- UTC timestamps with DST-safe handling  
+- Fixed random seeds for Monte-Carlo simulations  
+- No paid or proprietary data sources  
+- Deterministic model training configurations  
+
+---
