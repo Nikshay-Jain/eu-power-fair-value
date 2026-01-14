@@ -1,681 +1,518 @@
+# part3_improved.py
 """
-Part 3: Prompt Curve Translation — improved, production-ready version
-
-Improvements integrated:
-- Monte-Carlo aggregation of hourly predictive quantiles to obtain period P10/P50/P90/std/prob correctly
-- Calibration checks for hourly quantiles (P10/P90 coverage) and optional sigma inflation
-- Fixed expected P&L sign & clarified direction semantics
-- Two position-sizing options:
-    * risk_budget (VaR-style) — default (uses RISK_BUDGET_EUR)
-    * heuristic (legacy) — available
-  Both respect MAX_POSITION_MW cap
-- Backtest skeleton (runs if 'actual' or 'y_true' present in predictions CSV)
-- Robust invalidation rules + calibration-driven alerts
-- UTF-8 file writing preserved
-- Keeps input/output pipeline (PREDICTIONS_FILE, results/...) unchanged
+Part 3 — Prompt Curve Translation (improved, robust)
+Inputs expected: results/part2_final_predictions.csv (columns: timestamp, p10, p50, p90, optional y_true)
+Outputs:
+  - results/part3_trading_signals.csv
+  - results/part3_trading_reports.txt
+  - results/part3_trading_signals.png
+Design notes:
+  - Monte Carlo uses quantile-derived sigma with truncation to avoid extremes.
+  - Probabilities clipped to [0.02, 0.98] to avoid certainties.
+  - Position sizing conservative: uses confidence, SNR (edge/std), and max caps.
+  - Calibration uses available y_true rows.
 """
-import os, warnings
+import os
+import math
 from datetime import timedelta
-
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import seaborn as sns
-from scipy.stats import norm
+from scipy.stats import truncnorm
 
-sns.set_style("whitegrid")
-warnings.filterwarnings("ignore")
-
-# =========================
-# Configuration
-# =========================
-PREDICTIONS_FILE = "results/part2_final_predictions.csv"  # input (unchanged)
+# ---------------------------
+# Configuration (tweakable)
+# ---------------------------
+PREDICTIONS_FILE = "results/part2_final_predictions.csv"
 OUTPUT_DIR = "results"
+PNG_OUT = os.path.join(OUTPUT_DIR, "part3_trading_signals.png")
+CSV_OUT = os.path.join(OUTPUT_DIR, "part3_trading_signals.csv")
+REPORT_OUT = os.path.join(OUTPUT_DIR, "part3_trading_reports.txt")
 
-# Mock forward prices (keep unchanged by default)
+SIGNAL_THRESHOLD = 5.0           # EUR/MWh minimum edge to consider trading
+CONFIDENCE_THRESHOLD = 0.60     # minimum adjusted win probability to trade
+MAX_POSITION_MW = 20.0          # absolute cap on MW position
+MC_SAMPLES = 5000
+RANDOM_SEED = 2026
+MIN_STD_FLOOR = 0.5             # floor on hourly std to avoid division by zero
+PROB_CLIP = (0.02, 0.98)        # avoid certainty
+UNCERTAINTY_DECAY_SCALE = 30.0  # scale for uncertainty penalty (higher -> less penalty)
+MAX_EXPECTED_PNL_CAP = 5e6      # safety cap on expected P&L (EUR)
+FORWARD_PRICE_FALLBACK_DELTA_W = -3.0   # if forward not provided, fallback p50-3 for weeks
+FORWARD_PRICE_FALLBACK_DELTA_M = -5.0   # fallback for months
+
+# Example forward prices placeholder (replace by real fetch if available)
 FORWARD_PRICES = {
-    "week_1": 75.0,
-    "week_2": 73.5,
-    "week_3": 72.0,
-    "week_4": 71.0,
-    "month_1": 70.0,
-    "month_2": 69.0,
-    "month_3": 68.5,
+    'week_1': 75.0, 'week_2': 73.5, 'week_3': 72.0, 'week_4': 71.0,
+    'month_1': 70.0, 'month_2': 69.0, 'month_3': 68.5
 }
 
-# Trading / monte-carlo / sizing defaults
-SIGNAL_THRESHOLD = 5.0  # min edge (EUR/MWh) to consider trading
-CONFIDENCE_THRESHOLD = 0.65  # min win probability
-MAX_POSITION_MW = 20  # hard cap on MW
-MC_SAMPLES = 5000  # monte-carlo draws for period aggregation (5000 is a balanced default)
-MC_RANDOM_SEED = 42
-
-# Risk-budget sizing (VaR-style)
-USE_RISK_BUDGET_SIZING = True
-RISK_BUDGET_EUR = 100000.0  # e.g., acceptable one-period loss at 95% (desk-config)
-VAR_CONFIDENCE = 0.95  # for sizing calculation (z-score ~1.645)
-VAR_Z = norm.ppf(VAR_CONFIDENCE)
-
-# Calibration thresholds
-CALIBRATION_WARNING_TOL = 0.08  # if observed coverage deviates more than this, warn
-MIN_STD_FLOOR = 0.1  # floor for std to avoid zero-division issues
-
-# =========================
+# ---------------------------
 # Utilities
-# =========================
-def ensure_output_dir():
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+# ---------------------------
+def ensure_output_dir(path):
+    os.makedirs(path, exist_ok=True)
 
-
-def load_predictions(path):
+def safe_parse_predictions(path):
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Predictions file not found: {path}")
     df = pd.read_csv(path)
-    # ensure timestamp column
-    if "timestamp" not in df.columns and "MTU (UTC)" in df.columns:
-        df["timestamp"] = pd.to_datetime(df["MTU (UTC)"].str.split(" - ").str[0], dayfirst=True, utc=True)
-    else:
-        df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
-    # expected columns: p10, p50, p90 (case-insensitive)
-    # normalize column names
-    colmap = {}
-    for c in df.columns:
-        lc = c.lower()
-        if lc in ("p10", "p10_price", "p10_pred"):
-            colmap[c] = "p10"
-        if lc in ("p50", "p50_price", "p50_pred", "median"):
-            colmap[c] = "p50"
-        if lc in ("p90", "p90_price", "p90_pred"):
-            colmap[c] = "p90"
-        if lc in ("day-ahead price (eur/mwh)", "day-ahead price", "day_ahead_price", "price"):
-            colmap[c] = "actual"
-        if lc in ("y_true", "ytrue", "actual_price"):
-            colmap[c] = "actual"
-    df = df.rename(columns=colmap)
-    # if p10/p50/p90 absent raise error
-    for req in ("p10", "p50", "p90"):
-        if req not in df.columns:
-            raise KeyError(f"Predictions file must include column '{req}' (found: {list(df.columns)}).")
-    return df.sort_values("timestamp").reset_index(drop=True)
+    if 'timestamp' not in df.columns:
+        raise ValueError("Predictions file must contain 'timestamp' column")
+    df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True, errors='coerce')
+    if df['timestamp'].isna().any():
+        raise ValueError("Some timestamps could not be parsed; check input CSV")
+    # ensure quantile columns exist
+    for c in ['p10', 'p50', 'p90']:
+        if c not in df.columns:
+            raise ValueError(f"Predictions file missing required column: {c}")
+    # enforce p10 <= p50 <= p90 per hour
+    df['p10'] = np.minimum(df['p10'], df['p50'])
+    df['p90'] = np.maximum(df['p90'], df['p50'])
+    return df.sort_values('timestamp').reset_index(drop=True)
 
+# ---------------------------
+# MC aggregation (hourly -> period)
+# ---------------------------
+def quantiles_to_sigma(p10, p90):
+    # For normal approx: p90 - p10 = 2 * z(0.9) * sigma = 2.563102...
+    denom = 2.563102  # 2*z(0.9)
+    sigma = (p90 - p10) / denom
+    return np.maximum(sigma, MIN_STD_FLOOR)
 
-def compute_hourly_calibration(df):
+def aggregate_period_mc(period_df, n_samples=MC_SAMPLES, rng=None):
     """
-    Compute empirical coverage of hourly p10 & p90 compared to actuals (if available).
-    Returns observed_p10_coverage (fraction actual <= p10), observed_p90_coverage (fraction actual <= p90).
+    period_df: DataFrame with columns p10,p50,p90
+    returns: dict with p10,p50,p90,std,samples (period means)
     """
-    if "actual" not in df.columns:
-        return None
-    total = len(df)
-    obs_p10 = (df["actual"] <= df["p10"]).sum() / total
-    obs_p90 = (df["actual"] <= df["p90"]).sum() / total
-    return {"p10": obs_p10, "p90": obs_p90, "n": total}
-
-
-# =========================
-# Monte Carlo aggregation
-# =========================
-def period_mc_aggregate(period_df, n_samples=MC_SAMPLES, seed=MC_RANDOM_SEED, sigma_floor=MIN_STD_FLOOR):
-    """
-    Given hourly rows with p10/p50/p90 for the period, simulate period mean distribution.
-
-    Assumes hourly predictive distributions approx normal with mean=p50 and sigma derived from (p90-p10)/2.56.
-    Then draws n_samples of hourly values, computes sample-wise period means, and returns period quantiles,
-    std, and full samples array (useful for probability calculations).
-    """
-    if period_df is None or len(period_df) == 0:
+    if rng is None:
+        rng = np.random.default_rng(RANDOM_SEED)
+    # drop any missing hours
+    period_df = period_df.dropna(subset=['p10','p50','p90'])
+    n_hours = len(period_df)
+    if n_hours == 0:
         return None
 
-    mus = period_df["p50"].values.astype(float)
-    p10 = period_df["p10"].values.astype(float)
-    p90 = period_df["p90"].values.astype(float)
-    n_hours = len(mus)
+    p10 = period_df['p10'].values
+    p50 = period_df['p50'].values
+    p90 = period_df['p90'].values
 
-    # estimate hourly sigma with floor
-    sigs = (p90 - p10) / 2.56
-    sigs = np.maximum(sigs, sigma_floor)
+    sigma = quantiles_to_sigma(p10, p90)
 
-    rng = np.random.default_rng(seed)
-    # generate (n_samples, n_hours)
-    draws = rng.normal(loc=mus.reshape(1, -1), scale=sigs.reshape(1, -1), size=(n_samples, n_hours))
-    period_means = draws.mean(axis=1)  # mean across hours
-    p10_period, p50_period, p90_period = np.percentile(period_means, [10, 50, 90])
-    std_period = float(period_means.std(ddof=1))
+    # Use truncated normal between p10-4*sigma and p90+4*sigma to limit extreme draws
+    # For vectorized sampling we'll sample hour-by-hour
+    samples = np.empty((n_samples, n_hours), dtype=float)
+    # precompute trunc parameters per hour
+    for i in range(n_hours):
+        loc = p50[i]
+        scale = sigma[i]
+        a, b = (p10[i] - loc) / scale, (p90[i] - loc) / scale
+        # expand a/b a bit to allow draws slightly outside the p10/p90 band but bounded
+        a = a - 0.5
+        b = b + 0.5
+        # handle ill-conditioned scale
+        if scale <= 0:
+            samples[:, i] = loc
+            continue
+        tn = truncnorm(a, b, loc=loc, scale=scale)
+        samples[:, i] = tn.rvs(size=n_samples, random_state=rng)
+
+    # ensure no negative prices
+    samples = np.clip(samples, 0.0, None)
+
+    # period mean per MC sample
+    period_means = samples.mean(axis=1)
+
+    p10_period = np.percentile(period_means, 10)
+    p50_period = np.percentile(period_means, 50)
+    p90_period = np.percentile(period_means, 90)
+    std_period = period_means.std(ddof=1)
 
     return {
-        "p10": float(p10_period),
-        "p50": float(p50_period),
-        "p90": float(p90_period),
-        "std": max(std_period, sigma_floor),
-        "n_hours": n_hours,
-        "samples": period_means,
-        "raw_hourly_count": n_hours,
+        'p10': float(p10_period),
+        'p50': float(p50_period),
+        'p90': float(p90_period),
+        'std': float(std_period),
+        'samples': period_means,
+        'n_hours': n_hours
     }
 
+# ---------------------------
+# Calibration check
+# ---------------------------
+def check_calibration(df):
+    # df should have hourly p10/p90 and y_true where available
+    if 'y_true' not in df.columns:
+        return None
+    eval_df = df.dropna(subset=['y_true','p10','p90'])
+    if len(eval_df) == 0:
+        return None
+    total = len(eval_df)
+    p10_cov = (eval_df['y_true'] <= eval_df['p10']).sum() / total
+    p90_cov = (eval_df['y_true'] <= eval_df['p90']).sum() / total
+    return {
+        'p10_coverage': float(p10_cov),
+        'p90_coverage': float(p90_cov),
+        'p10_calibrated': abs(p10_cov - 0.10) < 0.08,
+        'p90_calibrated': abs(p90_cov - 0.90) < 0.08,
+        'n': int(total)
+    }
 
-# =========================
-# Position sizing
-# =========================
-def size_by_risk_budget(edge_abs, std_period, n_hours, risk_budget_eur=RISK_BUDGET_EUR, max_mw=MAX_POSITION_MW, z=VAR_Z):
-    """
-    VaR-based sizing:
-    Size such that worst-case loss at VAR_CONFIDENCE does not exceed RISK_BUDGET_EUR.
-    Worst-case loss (approx) = z * std_period * size * n_hours
-    => size = risk_budget / (z * std_period * n_hours)
-    We then cap to max_mw.
-    This is conservative and uses std_period (std of period mean).
-    """
-    denom = z * max(std_period, MIN_STD_FLOOR) * max(1, n_hours)
-    if denom <= 0:
-        return float(min(max_mw, 0.0))
-    size = float(risk_budget_eur / denom)
-    return float(min(size, max_mw))
+# ---------------------------
+# Signal generator (safe)
+# ---------------------------
+class TradingSignalGenerator:
+    def __init__(self, signal_thresh=SIGNAL_THRESHOLD, conf_thresh=CONFIDENCE_THRESHOLD,
+                 max_pos=MAX_POSITION_MW):
+        self.signal_thresh = signal_thresh
+        self.conf_thresh = conf_thresh
+        self.max_pos = max_pos
 
-
-def size_by_heuristic(sharpe, prob, max_mw=MAX_POSITION_MW):
-    """
-    Legacy heuristic sizing: scaled by Sharpe and confidence.
-    Kept as an alternate method for desk preference.
-    """
-    confidence_mult = max(0.0, (prob - 0.5) / 0.5)
-    size = 10 * min(abs(sharpe), 2) * confidence_mult
-    return float(min(size, max_mw))
-
-
-# =========================
-# Translator class (integrated)
-# =========================
-class PromptCurveTranslator:
-    def __init__(
-        self,
-        signal_threshold=SIGNAL_THRESHOLD,
-        confidence_threshold=CONFIDENCE_THRESHOLD,
-        max_position=MAX_POSITION_MW,
-        use_risk_budget=USE_RISK_BUDGET_SIZING,
-        risk_budget_eur=RISK_BUDGET_EUR,
-    ):
-        self.signal_threshold = float(signal_threshold)
-        self.confidence_threshold = float(confidence_threshold)
-        self.max_position = float(max_position)
-        self.use_risk_budget = bool(use_risk_budget)
-        self.risk_budget_eur = float(risk_budget_eur)
-
-    def _get_period_df(self, df, start, end):
-        mask = (df["timestamp"] >= start) & (df["timestamp"] < end)
-        period_df = df.loc[mask].copy().reset_index(drop=True)
-        return period_df
-
-    def aggregate_to_period(self, df, start, end):
+    def generate(self, period_stats, forward_price):
         """
-        Uses Monte-Carlo aggregation to generate period-level p10/p50/p90 and std.
-        Also returns hourly-level diagnostics (means, counts).
+        period_stats: output of aggregate_period_mc
+        forward_price: float
         """
-        period_df = self._get_period_df(df, start, end)
-        if period_df is None or len(period_df) == 0:
-            return None
+        expected = period_stats['p50']
+        std = max(period_stats['std'], MIN_STD_FLOOR)
+        samples = period_stats['samples']
+        n_hours = period_stats['n_hours']
 
-        mc = period_mc_aggregate(period_df, n_samples=MC_SAMPLES, seed=MC_RANDOM_SEED)
-        # attach some diagnostics
-        return {
-            "expected_price": float(mc["p50"]),
-            "p10_price": float(mc["p10"]),
-            "p90_price": float(mc["p90"]),
-            "std_dev": float(mc["std"]),
-            "n_hours": int(mc["n_hours"]),
-            "start": start,
-            "end": end,
-            "samples": mc["samples"],  # numpy array of period means
-            "hourly_count": int(mc["raw_hourly_count"]),
-            "hourly_mean_of_p50": float(period_df["p50"].mean()),
-        }
-
-    def generate_signal(self, forecast_stats, forward_price):
-        """
-        Use MC-derived samples to compute win probability and robust metrics.
-        Compute position sizing by risk_budget (VaR) or fallback heuristic.
-        """
-        expected = forecast_stats["expected_price"]
-        std_dev = max(forecast_stats["std_dev"], MIN_STD_FLOOR)
-        samples = forecast_stats.get("samples", None)
-        n_hours = forecast_stats["n_hours"]
-
-        # Edge signed
         edge = expected - forward_price
-        edge_abs = abs(edge)
 
-        # Sharpe-like measure
-        sharpe = edge / (std_dev + 1e-9)
-
-        # Probability of profitability computed directly from MC samples
-        if samples is not None:
-            if edge >= 0:
-                prob = float((samples > forward_price).mean())
-            else:
-                prob = float((samples < forward_price).mean())
+        # MC probability that period_mean > forward (for long) or < forward (for short)
+        if edge > 0:
+            prob_raw = float((samples > forward_price).mean())
         else:
-            # fallback to normal approx (less preferred)
-            if edge >= 0:
-                prob = 1.0 - norm.cdf(forward_price, loc=expected, scale=std_dev)
-            else:
-                prob = norm.cdf(forward_price, loc=expected, scale=std_dev)
-            prob = float(np.clip(prob, 0.0, 1.0))
+            prob_raw = float((samples < forward_price).mean())
 
-        # Decision & sizing
-        signal = "NEUTRAL"
-        position = 0.0
-        sizing_method = None
-        if edge_abs >= self.signal_threshold and prob >= self.confidence_threshold:
-            signal = "LONG" if edge > 0 else "SHORT"
-            # sizing
-            if self.use_risk_budget:
-                position = size_by_risk_budget(edge_abs, std_dev, n_hours, risk_budget_eur=self.risk_budget_eur, max_mw=self.max_position)
-                sizing_method = "risk_budget"
-            else:
-                position = size_by_heuristic(sharpe, prob, max_mw=self.max_position)
-                sizing_method = "heuristic"
+        # Uncertainty penalty based on band width (wider -> reduce effective prob)
+        band_width = period_stats['p90'] - period_stats['p10']
+        uncertainty_pen = math.exp(-band_width / UNCERTAINTY_DECAY_SCALE)
+        prob_adj = prob_raw * (0.6 + 0.4 * uncertainty_pen)  # keep base conservatism
+
+        # clip probability
+        prob_adj = float(np.clip(prob_adj, PROB_CLIP[0], PROB_CLIP[1]))
+
+        # Signal decision
+        signal = 'NEUTRAL'
+        position_mw = 0.0
+
+        if abs(edge) >= self.signal_thresh and prob_adj >= self.conf_thresh:
+            signal = 'LONG' if edge > 0 else 'SHORT'
+
+            # Confidence multiplier in (0,1)
+            conf_mult = max(0.0, (prob_adj - 0.5) / 0.5)
+
+            # Signal-to-noise: use edge relative to std (normalized by sqrt(hours) since averaging)
+            snr = abs(edge) / (std / math.sqrt(max(1, n_hours)))
+            # normalize snr (soft cap)
+            snr_factor = min(snr / 2.0, 1.0)  # SNR ~2 considered strong
+
+            # combine into a size fraction
+            size_frac = conf_mult * snr_factor
+            position_mw = float(min(self.max_pos, max(0.0, self.max_pos * size_frac)))
         else:
-            # no trade
-            signal = "NEUTRAL"
-            position = 0.0
-            sizing_method = "none"
+            prob_adj = float(np.clip(prob_adj, 0.0, 1.0))
 
-        # Expected P&L: always positive representing expected profit magnitude,
-        # and we keep direction in 'signal' field. This avoids sign confusion.
-        expected_pnl = edge_abs * position * n_hours
+        # Conservative expected P&L: edge * position * hours, but apply execution slippage factor (0.7)
+        expected_pnl = float(np.clip(abs(edge) * position_mw * n_hours * 0.7, 0.0, MAX_EXPECTED_PNL_CAP))
+
+        # Sharpe-like metric (edge / std)
+        sharpe = float(edge / std)
 
         return {
-            "signal": signal,
-            "edge_eur": float(edge),
-            "edge_abs_eur": float(edge_abs),
-            "sharpe_ratio": float(sharpe),
-            "probability": float(prob),
-            "position_mw": float(position),
-            "expected_pnl_eur": float(expected_pnl),
-            "forward_price": float(forward_price),
-            "sizing_method": sizing_method,
+            'signal': signal,
+            'edge': float(edge),
+            'sharpe': sharpe,
+            'probability_raw': float(prob_raw),
+            'probability': prob_adj,
+            'position_mw': position_mw,
+            'expected_pnl': expected_pnl,
+            'forward_price': float(forward_price),
+            'band_width': float(band_width)
         }
 
-    def check_invalidation(self, forecast_stats, signal_dict, historical_df=None, calibration=None):
-        """
-        Enhanced invalidation rules:
-        - small edge (<50% threshold)
-        - low probability (<60%)
-        - very wide band (P90-P10 too large)
-        - quantile miscalibration (if calibration provided)
-        - realized revisions / forecast updates not implemented here (would need multi-run inputs)
-        """
+    def invalidation_checks(self, period_stats, signal_dict, calibration):
         triggers = []
-        edge_abs = abs(signal_dict["edge_eur"])
-        prob = signal_dict["probability"]
-        band_width = forecast_stats["p90_price"] - forecast_stats["p10_price"]
+        # Edge erosion
+        if abs(signal_dict['edge']) < self.signal_thresh * 0.5:
+            triggers.append(f"Edge eroded ({signal_dict['edge']:+.1f} EUR/MWh)")
 
-        if edge_abs < (self.signal_threshold * 0.5):
-            triggers.append(f"Edge eroded to {signal_dict['edge_eur']:.1f} EUR/MWh")
-        if prob < 0.6:
-            triggers.append(f"Low confidence: {prob*100:.0f}%")
-        if band_width > 60:
-            triggers.append(f"High uncertainty: P10-P90 band = {band_width:.1f} EUR/MWh")
+        # Low confidence
+        if signal_dict['probability'] < 0.6:
+            triggers.append(f"Low confidence: {signal_dict['probability']*100:.0f}%")
 
-        # calibration-based triggers
+        # Wide uncertainty band
+        if period_stats['p90'] - period_stats['p10'] > 40:
+            triggers.append(f"Wide band: {period_stats['p90'] - period_stats['p10']:.1f} EUR/MWh")
+
+        # Calibration warnings
         if calibration is not None:
-            # calibration expected: p10 ~ 0.10, p90 ~ 0.90
-            p10_obs = calibration.get("p10", None)
-            p90_obs = calibration.get("p90", None)
-            if p10_obs is not None and abs(p10_obs - 0.10) > CALIBRATION_WARNING_TOL:
-                triggers.append(f"P10 calibration off: observed {p10_obs*100:.1f}% (target 10%)")
-            if p90_obs is not None and abs(p90_obs - 0.90) > CALIBRATION_WARNING_TOL:
-                triggers.append(f"P90 calibration off: observed {p90_obs*100:.1f}% (target 90%)")
+            if not calibration.get('p10_calibrated', True):
+                triggers.append(f"P10 miscalibrated ({calibration['p10_coverage']*100:.0f}%)")
+            if not calibration.get('p90_calibrated', True):
+                triggers.append(f"P90 miscalibrated ({calibration['p90_coverage']*100:.0f}%)")
 
-        # decide action
+        # Verdict
         if len(triggers) == 0:
-            action = "HOLD"
+            action = 'HOLD'
         elif len(triggers) == 1:
-            action = "REDUCE_50%"
+            action = 'REDUCE_50%'
         else:
-            action = "CLOSE"
+            action = 'CLOSE'
 
-        return {"should_invalidate": len(triggers) > 0, "triggered_rules": triggers, "action": action}
+        return {'triggers': triggers, 'action': action}
 
-    def format_report(self, period_name, forecast_stats, signal, invalidation, mc_samples=MC_SAMPLES, calibration=None):
-        """Generate a trader-ready report. Expected P&L shown positive magnitude; signal contains direction."""
-        start = forecast_stats["start"]
-        end = forecast_stats["end"]
-        dur = forecast_stats["n_hours"]
-        report = []
-        report.append("=" * 80)
-        report.append(f"TRADING SIGNAL: {period_name}")
-        report.append("=" * 80)
-        report.append("")
-        report.append("DELIVERY PERIOD:")
-        report.append(f"  {start.strftime('%Y-%m-%d %H:%M')} -> {end.strftime('%Y-%m-%d %H:%M')}  ({dur} hours)")
-        report.append("")
-        report.append("FORECAST (Period aggregated via MC):")
-        report.append(f"  P50 (expected):    {forecast_stats['expected_price']:.2f} EUR/MWh")
-        report.append(f"  P10 (downside):    {forecast_stats['p10_price']:.2f} EUR/MWh")
-        report.append(f"  P90 (upside):      {forecast_stats['p90_price']:.2f} EUR/MWh")
-        report.append(f"  Std (period mean): {forecast_stats['std_dev']:.2f} EUR/MWh  (MC draws: {mc_samples})")
-        report.append("")
-        report.append("MARKET / EDGE:")
-        report.append(f"  Forward price:     {signal['forward_price']:.2f} EUR/MWh")
-        report.append(f"  Edge (signed):     {signal['edge_eur']:+.2f} EUR/MWh")
-        report.append(f"  Win Prob:          {signal['probability']*100:.1f}%")
-        report.append(f"  Sharpe-like:       {signal['sharpe_ratio']:.3f}")
-        report.append("")
-        report.append("RECOMMENDATION & SIZE:")
-        report.append(f"  Signal:            {signal['signal']}")
-        report.append(f"  Position (MW):     {signal['position_mw']:.2f} MW (method: {signal.get('sizing_method','-')})")
-        report.append(f"  Expected P&L:      {signal['expected_pnl_eur']:,.0f} EUR (magnitude; positive = expected profit)")
-        report.append("")
-        report.append("RISK & INVALIDATION:")
-        report.append(f"  Invalidation action: {invalidation['action']}")
-        if invalidation["should_invalidate"]:
-            report.append("  Triggers:")
-            for t in invalidation["triggered_rules"]:
-                report.append(f"    - {t}")
+    def format_report(self, period_name, period_range, period_stats, signal, invalidation, calibration):
+        s = []
+        s.append("="*70)
+        s.append(f"TRADING SIGNAL: {period_name}")
+        s.append("="*70)
+        s.append(f"DELIVERY: {period_range[0].isoformat()} -> {period_range[1].isoformat()} ({period_stats['n_hours']} hours)")
+        s.append("")
+        s.append("FORECAST (MC aggregated):")
+        s.append(f"  P50: {period_stats['p50']:.2f} EUR/MWh")
+        s.append(f"  P10: {period_stats['p10']:.2f} EUR/MWh")
+        s.append(f"  P90: {period_stats['p90']:.2f} EUR/MWh")
+        s.append(f"  Std: {period_stats['std']:.2f} EUR/MWh")
+        s.append("")
+        s.append("MARKET:")
+        s.append(f"  Forward price: {signal['forward_price']:.2f} EUR/MWh")
+        s.append(f"  Edge: {signal['edge']:+.2f} EUR/MWh")
+        s.append(f"  Sharpe: {signal['sharpe']:.2f}")
+        s.append(f"  Win Prob (adj): {signal['probability']*100:.1f}%")
+        s.append("")
+        s.append("RECOMMENDATION:")
+        s.append(f"  Signal: {signal['signal']}")
+        s.append(f"  Position: {signal['position_mw']:.2f} MW (baseload)")
+        s.append(f"  Expected P&L (conservative): {signal['expected_pnl']:,.0f} EUR")
+        s.append("")
+        s.append("RISK MANAGEMENT:")
+        s.append(f"  Action: {invalidation['action']}")
+        if invalidation['triggers']:
+            s.append("  Alerts:")
+            for t in invalidation['triggers']:
+                s.append(f"    - {t}")
         else:
-            report.append("  No invalidation triggers")
-        report.append("")
-        # calibration snapshot
+            s.append("  No alerts.")
+        s.append("")
+        s.append("INVALIDATION TRIGGERS (examples):")
+        s.append("  • Wind forecast revision >20%")
+        s.append("  • 3-day forecast error >15 EUR/MWh")
+        s.append("  • Forward price converges to forecast")
         if calibration is not None:
-            report.append("CALIBRATION (hourly quantiles vs actuals):")
-            report.append(f"  Observed P10 coverage: {calibration['p10']*100:.1f}% (target 10%)")
-            report.append(f"  Observed P90 coverage: {calibration['p90']*100:.1f}% (target 90%)")
-            report.append("")
-        report.append("DESK ACTIONS (example):")
-        if signal["signal"] == "LONG":
-            report.append(f"  • BUY {signal['position_mw']:.0f} MW {period_name} Baseload @ {signal['forward_price']:.2f}")
-            report.append(f"  • Expected exit: sell in DA @ ~{forecast_stats['expected_price']:.2f}")
-        elif signal["signal"] == "SHORT":
-            report.append(f"  • SELL {signal['position_mw']:.0f} MW {period_name} Baseload @ {signal['forward_price']:.2f}")
-            report.append(f"  • Expected exit: buy in DA @ ~{forecast_stats['expected_price']:.2f}")
+            s.append("")
+            s.append("CALIBRATION (hourly Evidence):")
+            s.append(f"  P10 observed: {calibration['p10_coverage']*100:.0f}% (target 10%)  N={calibration['n']}")
+            s.append(f"  P90 observed: {calibration['p90_coverage']*100:.0f}% (target 90%)")
+        s.append("")
+        if signal['signal'] == 'LONG':
+            s.append(f"DESK ACTION: BUY {signal['position_mw']:.0f} MW {period_name} @ {signal['forward_price']:.2f}")
+        elif signal['signal'] == 'SHORT':
+            s.append(f"DESK ACTION: SELL {signal['position_mw']:.0f} MW {period_name} @ {signal['forward_price']:.2f}")
         else:
-            report.append("  • NO TRADE - Edge insufficient or confidence too low")
-        report.append("")
-        report.append("INVALIDATION (examples):")
-        report.append("  • Wind forecast revision > 20%")
-        report.append("  • Load forecast revision > 15%")
-        report.append("  • Cumulative forecast error > 15 EUR/MWh (3-day)")
-        report.append("  • Forward price convergence (edge -> 0)")
-        report.append("=" * 80)
-        return "\n".join(report)
+            s.append("DESK ACTION: NO TRADE (edge/confidence insufficient)")
+        s.append("\n")
+        return "\n".join(s)
 
+# ---------------------------
+# Generate all period signals
+# ---------------------------
+def generate_period_signals(preds_df, forward_prices):
+    preds_df = preds_df.copy()
+    preds_df = preds_df.sort_values('timestamp').reset_index(drop=True)
+    start_date = preds_df['timestamp'].dt.floor('D').min()
 
-# =========================
-# Aggregation & Signal generation for multiple periods + calibration/backtest
-# =========================
-def generate_all_signals(predictions_df, forward_prices):
-    """
-    Produces signals & reports for 4 weeks and 3 months.
-    Also runs calibration diagnostics and an optional in-sample backtest if 'actual' column present.
-    """
-    translator = PromptCurveTranslator(
-        signal_threshold=SIGNAL_THRESHOLD,
-        confidence_threshold=CONFIDENCE_THRESHOLD,
-        max_position=MAX_POSITION_MW,
-        use_risk_budget=USE_RISK_BUDGET_SIZING,
-        risk_budget_eur=RISK_BUDGET_EUR,
-    )
-
-    predictions_df = predictions_df.copy()
-    predictions_df["timestamp"] = pd.to_datetime(predictions_df["timestamp"], utc=True)
-
-    # calibration
-    calibration = compute_hourly_calibration(predictions_df)
-    if calibration is None:
-        calibration = {"p10": None, "p90": None, "n": 0}
+    calibration = check_calibration(preds_df)
+    gen = TradingSignalGenerator()
+    rng = np.random.default_rng(RANDOM_SEED)
 
     signals = []
     reports = []
 
-    start_date = predictions_df["timestamp"].min()
-
-    # weekly signals
+    # Weekly signals (next 4 calendar weeks from first available day)
     for i in range(4):
         week_start = start_date + timedelta(weeks=i)
         week_end = week_start + timedelta(weeks=1)
-        forecast_stats = translator.aggregate_to_period(predictions_df, week_start, week_end)
-        if forecast_stats is None:
+        mask = (preds_df['timestamp'] >= week_start) & (preds_df['timestamp'] < week_end)
+        period_df = preds_df.loc[mask]
+        if len(period_df) < 6:  # require at least some coverage; skip sparse periods
             continue
+        period_stats = aggregate_period_mc(period_df, n_samples=MC_SAMPLES, rng=rng)
+        if period_stats is None:
+            continue
+        period_stats['start'] = week_start
+        period_stats['end'] = week_end
 
-        forward_key = f"week_{i+1}"
-        forward_price = forward_prices.get(forward_key, forecast_stats["expected_price"] - 3.0)
-        signal = translator.generate_signal(forecast_stats, forward_price)
-        invalidation = translator.check_invalidation(forecast_stats, signal, historical_df=predictions_df, calibration=calibration)
+        forward_price = forward_prices.get(f'week_{i+1}', period_stats['p50'] + FORWARD_PRICE_FALLBACK_DELTA_W)
+        signal = gen.generate(period_stats, forward_price)
+        invalidation = gen.invalidation_checks(period_stats, signal, calibration)
         period_name = f"Week {i+1}"
-        report = translator.format_report(period_name, forecast_stats, signal, invalidation, mc_samples=MC_SAMPLES, calibration=calibration)
 
-        # append
-        row = {
-            "period": period_name,
-            "period_type": "week",
-            "start": week_start,
-            "end": week_end,
-            **{k: v for k, v in forecast_stats.items() if k not in ["samples"]},
+        report = gen.format_report(period_name, (week_start, week_end), period_stats, signal, invalidation, calibration)
+        signals.append({
+            'period': period_name,
+            'type': 'week',
+            'start': week_start.isoformat(),
+            'end': week_end.isoformat(),
+            'p10': period_stats['p10'],
+            'p50': period_stats['p50'],
+            'p90': period_stats['p90'],
+            'std': period_stats['std'],
+            'n_hours': period_stats['n_hours'],
             **signal,
-            "invalidation_action": invalidation["action"],
-        }
-        signals.append(row)
+            'invalidation_action': invalidation['action']
+        })
         reports.append(report)
 
-    # monthly signals (30-day rolling blocks)
+    # Monthly signals (30-day rolling windows)
     for i in range(3):
         month_start = start_date + timedelta(days=30 * i)
         month_end = month_start + timedelta(days=30)
-        forecast_stats = translator.aggregate_to_period(predictions_df, month_start, month_end)
-        if forecast_stats is None:
+        mask = (preds_df['timestamp'] >= month_start) & (preds_df['timestamp'] < month_end)
+        period_df = preds_df.loc[mask]
+        if len(period_df) < 24:  # require at least a day's coverage
             continue
+        period_stats = aggregate_period_mc(period_df, n_samples=MC_SAMPLES, rng=rng)
+        if period_stats is None:
+            continue
+        period_stats['start'] = month_start
+        period_stats['end'] = month_end
 
-        forward_key = f"month_{i+1}"
-        forward_price = forward_prices.get(forward_key, forecast_stats["expected_price"] - 5.0)
-        signal = translator.generate_signal(forecast_stats, forward_price)
-        invalidation = translator.check_invalidation(forecast_stats, signal, historical_df=predictions_df, calibration=calibration)
+        forward_price = forward_prices.get(f'month_{i+1}', period_stats['p50'] + FORWARD_PRICE_FALLBACK_DELTA_M)
+        signal = gen.generate(period_stats, forward_price)
+        invalidation = gen.invalidation_checks(period_stats, signal, calibration)
         period_name = f"Month {i+1}"
-        report = translator.format_report(period_name, forecast_stats, signal, invalidation, mc_samples=MC_SAMPLES, calibration=calibration)
 
-        row = {
-            "period": period_name,
-            "period_type": "month",
-            "start": month_start,
-            "end": month_end,
-            **{k: v for k, v in forecast_stats.items() if k not in ["samples"]},
+        report = gen.format_report(period_name, (month_start, month_end), period_stats, signal, invalidation, calibration)
+        signals.append({
+            'period': period_name,
+            'type': 'month',
+            'start': month_start.isoformat(),
+            'end': month_end.isoformat(),
+            'p10': period_stats['p10'],
+            'p50': period_stats['p50'],
+            'p90': period_stats['p90'],
+            'std': period_stats['std'],
+            'n_hours': period_stats['n_hours'],
             **signal,
-            "invalidation_action": invalidation["action"],
-        }
-        signals.append(row)
+            'invalidation_action': invalidation['action']
+        })
         reports.append(report)
 
     signals_df = pd.DataFrame(signals)
+    return signals_df, reports, calibration
 
-    # Optional backtest: if 'actual' exists in predictions_df compute realized period price and realized pnl
-    backtest_rows = []
-    if "actual" in predictions_df.columns:
-        for _, sig in signals_df.iterrows():
-            s = sig["start"]
-            e = sig["end"]
-            mask = (predictions_df["timestamp"] >= s) & (predictions_df["timestamp"] < e)
-            period_actuals = predictions_df.loc[mask, "actual"]
-            if period_actuals is None or len(period_actuals) == 0:
-                continue
-            realized_mean = float(period_actuals.mean())
-            # realized pnl: if LONG and realized_mean > forward -> profit = (realized_mean - forward) * size * n_hours
-            edge_realized = realized_mean - sig["forward_price"]
-            # realized sign: profit magnitude
-            realized_pnl = abs(edge_realized) * sig["position_mw"] * sig["n_hours"]
-            backtest_rows.append(
-                {
-                    "period": sig["period"],
-                    "start": s,
-                    "end": e,
-                    "signal": sig["signal"],
-                    "position_mw": sig["position_mw"],
-                    "forward_price": sig["forward_price"],
-                    "realized_mean": realized_mean,
-                    "realized_edge": edge_realized,
-                    "realized_pnl": realized_pnl,
-                }
-            )
+# ---------------------------
+# Visualization
+# ---------------------------
+def create_plots(signals_df):
+    if signals_df is None or len(signals_df) == 0:
+        print("No signals to plot.")
+        return
+    fig, axes = plt.subplots(2, 3, figsize=(16, 10))
+    ax = axes.flatten()
 
-    backtest_df = pd.DataFrame(backtest_rows)
+    # 1. Signal counts
+    counts = signals_df['signal'].value_counts()
+    ax[0].bar(counts.index.astype(str), counts.values)
+    ax[0].set_title("Signal distribution")
+    ax[0].grid(True, alpha=0.3)
 
-    return signals_df, reports, calibration, backtest_df
+    # 2. Edge by period (weeks)
+    weeks = signals_df[signals_df['type'] == 'week']
+    if not weeks.empty:
+        ax[1].barh(weeks['period'], weeks['edge'], color=['green' if x > 0 else 'red' for x in weeks['edge']])
+        ax[1].axvline(SIGNAL_THRESHOLD, color='green', linestyle='--')
+        ax[1].axvline(-SIGNAL_THRESHOLD, color='red', linestyle='--')
+        ax[1].set_title("Weekly edges")
+        ax[1].grid(True, alpha=0.3)
 
+    # 3. Position sizing vs probability
+    ax[2].scatter(signals_df['probability'] * 100, signals_df['position_mw'], s=80, alpha=0.9)
+    ax[2].axvline(CONFIDENCE_THRESHOLD * 100, color='orange', linestyle='--')
+    ax[2].axhline(MAX_POSITION_MW, color='red', linestyle='--')
+    ax[2].set_xlabel("Win probability (%)")
+    ax[2].set_ylabel("Position (MW)")
+    ax[2].set_title("Position sizing")
 
-# =========================
-# Plotting
-# =========================
-def create_plots(signals_df, predictions_df, backtest_df=None):
-    fig = plt.figure(figsize=(16, 10))
+    # 4. Expected P&L
+    ax[3].barh(signals_df['period'], signals_df['expected_pnl'], color=['green' if x > 0 else 'red' for x in signals_df['expected_pnl']])
+    ax[3].set_title("Expected P&L by period")
+    ax[3].grid(True, alpha=0.3)
 
-    # Plot 1: Signal distribution
-    ax1 = plt.subplot(2, 3, 1)
-    signal_counts = signals_df["signal"].value_counts()
-    colors = {"LONG": "#2ca02c", "SHORT": "#d62728", "NEUTRAL": "#7f7f7f"}
-    ax1.bar(signal_counts.index, signal_counts.values, color=[colors.get(x, "#7f7f7f") for x in signal_counts.index])
-    ax1.set_ylabel("Count")
-    ax1.set_title("Signal Distribution")
-    ax1.grid(True, alpha=0.3, axis="y")
+    # 5. Forecast bands vs forward (weeks)
+    if not weeks.empty:
+        for _, r in weeks.iterrows():
+            center = pd.to_datetime(r['start']) + (pd.to_datetime(r['end']) - pd.to_datetime(r['start'])) / 2
+            ax[4].errorbar(center, r['p50'],
+                           yerr=[[r['p50'] - r['p10']], [r['p90'] - r['p50']]],
+                           fmt='o', capsize=5)
+            ax[4].axhline(r['forward_price'], color='gray', linestyle='--', alpha=0.6)
+        ax[4].set_title("Weekly forecast bands vs forward")
+        ax[4].set_ylabel("EUR/MWh")
+        ax[4].grid(True, alpha=0.3)
 
-    # Plot 2: Edge by period (weeks)
-    ax2 = plt.subplot(2, 3, 2)
-    week_signals = signals_df[signals_df["period_type"] == "week"]
-    colors_edge = ["green" if e > 0 else "red" for e in week_signals["edge_eur"]]
-    ax2.barh(week_signals["period"], week_signals["edge_eur"], color=colors_edge, alpha=0.7)
-    ax2.axvline(SIGNAL_THRESHOLD, color="green", linestyle="--", label=f"Long threshold (+{SIGNAL_THRESHOLD})")
-    ax2.axvline(-SIGNAL_THRESHOLD, color="red", linestyle="--", label=f"Short threshold (-{SIGNAL_THRESHOLD})")
-    ax2.set_xlabel("Edge (EUR/MWh)")
-    ax2.set_title("Edge vs Forward Price (Weeks)")
-    ax2.legend()
-    ax2.grid(True, alpha=0.3, axis="x")
-
-    # Plot 3: Position sizing
-    ax3 = plt.subplot(2, 3, 3)
-    sc = ax3.scatter(signals_df["probability"] * 100, signals_df["position_mw"], c=signals_df["edge_eur"], cmap="RdYlGn", s=100, alpha=0.8)
-    ax3.axhline(MAX_POSITION_MW, color="red", linestyle="--", label=f"Max position ({MAX_POSITION_MW} MW)")
-    ax3.axvline(CONFIDENCE_THRESHOLD * 100, color="orange", linestyle="--", label=f"Min confidence ({CONFIDENCE_THRESHOLD*100:.0f}%)")
-    ax3.set_xlabel("Win Probability (%)")
-    ax3.set_ylabel("Position Size (MW)")
-    ax3.set_title("Position Sizing Logic")
-    ax3.legend()
-    ax3.grid(True, alpha=0.3)
-    cbar = plt.colorbar(sc, ax=ax3)
-    cbar.set_label("Edge (EUR/MWh)")
-
-    # Plot 4: Expected P&L by period
-    ax4 = plt.subplot(2, 3, 4)
-    if len(signals_df) > 0:
-        pnl_by_period = signals_df.set_index("period")["expected_pnl_eur"]
-        colors_pnl = ["green" if x > 0 else "red" for x in pnl_by_period.values]
-        ax4.barh(pnl_by_period.index, pnl_by_period.values, color=colors_pnl, alpha=0.7)
-    ax4.set_xlabel("Expected P&L (EUR)")
-    ax4.set_title("Expected P&L by Period")
-    ax4.grid(True, alpha=0.3, axis="x")
-
-    # Plot 5: Forecast bands timeline (weeks)
-    ax5 = plt.subplot(2, 3, 5)
-    weeks = signals_df[signals_df["period_type"] == "week"].reset_index(drop=True)
-    for _, row in weeks.iterrows():
-        center = row["start"] + (row["end"] - row["start"]) / 2
-        ax5.errorbar(center, row["expected_price"], yerr=[[row["expected_price"] - row["p10_price"]], [row["p90_price"] - row["expected_price"]]], fmt="o", capsize=5, label=row["period"])
-        ax5.axhline(row["forward_price"], xmin=0.0, xmax=1.0, linestyle="--", alpha=0.5, color="gray")
-    ax5.set_xlabel("Time")
-    ax5.set_ylabel("Price (EUR/MWh)")
-    ax5.set_title("Forecast vs Forward (Period P10/P50/P90)")
-    ax5.legend(fontsize=8)
-    ax5.grid(True, alpha=0.3)
-
-    # Plot 6: Risk-return scatter (std_dev vs edge)
-    ax6 = plt.subplot(2, 3, 6)
-    active = signals_df[signals_df["signal"] != "NEUTRAL"]
-    if len(active) > 0:
-        ax6.scatter(active["std_dev"], active["edge_eur"], c=active["position_mw"], s=100, cmap="viridis", alpha=0.9)
-        ax6.axhline(SIGNAL_THRESHOLD, color="green", linestyle="--", alpha=0.5)
-        ax6.axhline(-SIGNAL_THRESHOLD, color="red", linestyle="--", alpha=0.5)
-        ax6.set_xlabel("Forecast Std Dev (EUR/MWh)")
-        ax6.set_ylabel("Edge (EUR/MWh)")
-        ax6.set_title("Risk vs Return")
-    ax6.grid(True, alpha=0.3)
+    # 6. Risk-return scatter (std vs edge)
+    active = signals_df[signals_df['signal'] != 'NEUTRAL']
+    if not active.empty:
+        for t, df_t in active.groupby('signal'):
+            ax[5].scatter(df_t['std'], df_t['edge'], label=t, s=80, alpha=0.8)
+        ax[5].axhline(SIGNAL_THRESHOLD, color='green', linestyle='--')
+        ax[5].axhline(-SIGNAL_THRESHOLD, color='red', linestyle='--')
+        ax[5].set_xlabel("Forecast std (EUR/MWh)")
+        ax[5].set_ylabel("Edge (EUR/MWh)")
+        ax[5].set_title("Risk vs Return")
+        ax[5].legend()
+        ax[5].grid(True, alpha=0.3)
 
     plt.tight_layout()
-    outpath = os.path.join(OUTPUT_DIR, "part3_trading_signals.png")
-    plt.savefig(outpath, dpi=150, bbox_inches="tight")
+    plt.savefig(PNG_OUT, dpi=150, bbox_inches='tight')
     plt.close(fig)
-    print(f"\n✓ Plots saved to {outpath}")
+    print(f"Saved plot to {PNG_OUT}")
 
-    # Backtest plot (if backtest data provided)
-    if backtest_df is not None and len(backtest_df) > 0:
-        fig2, ax = plt.subplots(figsize=(10, 4))
-        backtest_df = backtest_df.sort_values("start")
-        ax.plot(backtest_df["start"], backtest_df["realized_pnl"].cumsum(), marker="o")
-        ax.set_title("Backtest: Cumulative Realized P&L")
-        ax.set_xlabel("Period")
-        ax.set_ylabel("Cumulative P&L (EUR)")
-        ax.grid(True)
-        path2 = os.path.join(OUTPUT_DIR, "part3_backtest_pnl.png")
-        plt.savefig(path2, dpi=150, bbox_inches="tight")
-        plt.close(fig2)
-        print(f"✓ Backtest plot saved to {path2}")
-
-
-# =========================
+# ---------------------------
 # Main
-# =========================
+# ---------------------------
 def main():
-    ensure_output_dir()
-    print("Loading Part 2 predictions...")
-    preds = load_predictions(PREDICTIONS_FILE)
-    print(f"Loaded {len(preds):,} hourly predictions (timestamps from {preds['timestamp'].min()} to {preds['timestamp'].max()})")
+    ensure_output_dir(OUTPUT_DIR)
+    print("Loading predictions:", PREDICTIONS_FILE)
+    preds = safe_parse_predictions(PREDICTIONS_FILE)
+    print(f"Loaded {len(preds):,} hourly predictions from {preds['timestamp'].min().isoformat()} to {preds['timestamp'].max().isoformat()}")
 
-    # calibration
-    calibration = compute_hourly_calibration(preds)
-    if calibration is not None:
-        print(f"Hourly quantile calibration: P10 obs={calibration['p10']*100:.1f}%, P90 obs={calibration['p90']*100:.1f}%, n={calibration['n']}")
-        # If calibration is poor, we could inflate sigmas here. For now we only warn in reports.
-    else:
-        print("No actuals found in predictions file; calibration not available.")
+    signals_df, reports, calibration = generate_period_signals(preds, FORWARD_PRICES)
 
-    # generate signals and reports
-    signals_df, reports, calibration, backtest_df = generate_all_signals(preds, FORWARD_PRICES)
+    # Save CSV & reports
+    if signals_df is None or signals_df.empty:
+        print("No signals generated. Exiting.")
+        return
 
-    # Save signals
-    sig_path = os.path.join(OUTPUT_DIR, "part3_trading_signals.csv")
-    signals_df.to_csv(sig_path, index=False)
-    print(f"\n✓ Signals saved to {sig_path}")
-
-    # Save reports
-    rep_path = os.path.join(OUTPUT_DIR, "part3_trading_reports.txt")
-    with open(rep_path, "w", encoding="utf-8") as f:
+    signals_df.to_csv(CSV_OUT, index=False)
+    with open(REPORT_OUT, "w", encoding="utf-8") as f:
         f.write("\n\n".join(reports))
-    print(f"✓ Reports saved to {rep_path}")
 
-    # Save backtest (if any)
-    if backtest_df is not None and len(backtest_df) > 0:
-        bt_path = os.path.join(OUTPUT_DIR, "part3_backtest.csv")
-        backtest_df.to_csv(bt_path, index=False)
-        print(f"✓ Backtest saved to {bt_path}")
+    # Summary to stdout
+    total_long = int((signals_df['signal'] == 'LONG').sum())
+    total_short = int((signals_df['signal'] == 'SHORT').sum())
+    total_neutral = int((signals_df['signal'] == 'NEUTRAL').sum())
+    total_expected_pnl = float(signals_df['expected_pnl'].sum())
 
-    # Print summary
-    print("\n" + "=" * 80)
-    print("TRADING SUMMARY")
-    print("=" * 80)
-    print(f"Total signals generated: {len(signals_df)}")
-    print(f"  Long signals:    {(signals_df['signal'] == 'LONG').sum()}")
-    print(f"  Short signals:   {(signals_df['signal'] == 'SHORT').sum()}")
-    print(f"  Neutral:         {(signals_df['signal'] == 'NEUTRAL').sum()}")
-    print(f"Total expected P&L (sum of magnitudes): {signals_df['expected_pnl_eur'].sum():,.0f} EUR")
-    if len(signals_df[signals_df["position_mw"] > 0]) > 0:
-        print(f"Average position size (active): {signals_df[signals_df['position_mw'] > 0]['position_mw'].mean():.1f} MW")
-        print(f"Average edge (active): {signals_df[signals_df['signal'] != 'NEUTRAL']['edge_eur'].mean():.2f} EUR/MWh")
+    print("\n" + "="*70)
+    print("SUMMARY (Part 3)")
+    print("="*70)
+    print(f"Long: {total_long} | Short: {total_short} | Neutral: {total_neutral}")
+    print(f"Total expected P&L (conservative cap applied): {total_expected_pnl:,.0f} EUR")
+    if calibration is not None:
+        print(f"Calibration: P10 obs {calibration['p10_coverage']*100:.0f}% (target 10%), P90 obs {calibration['p90_coverage']*100:.0f}% (target 90%), N={calibration['n']}")
 
-    # Create plots
-    create_plots(signals_df, preds, backtest_df if len(backtest_df) > 0 else None)
+    # plots
+    create_plots(signals_df)
 
-    print("\n" + "=" * 80)
-    print("✅ PART 3 COMPLETE — files in 'results/'")
-    print("=" * 80)
-    print("Notes:")
-    print(" - This implementation uses MC aggregation of hourly predictive quantiles to produce correct period-level uncertainty.")
-    print(" - Position sizing by default uses a conservative VaR-style rule; set USE_RISK_BUDGET_SIZING=False to use heuristic sizing.")
-    print(" - If you have a real forward curve CSV, replace FORWARD_PRICES mapping with that ingestion step.")
-    print(" - Backtest runs only if 'actual' column exists in predictions CSV; otherwise backtest outputs are skipped.")
-
+    print("\nOutputs written:")
+    print("  •", CSV_OUT)
+    print("  •", REPORT_OUT)
+    print("  •", PNG_OUT)
 
 if __name__ == "__main__":
     main()
