@@ -1,19 +1,4 @@
-# part3_improved.py
-"""
-Part 3 — Prompt Curve Translation (improved, robust)
-Inputs expected: results/part2_final_predictions.csv (columns: timestamp, p10, p50, p90, optional y_true)
-Outputs:
-  - results/part3_trading_signals.csv
-  - results/part3_trading_reports.txt
-  - results/part3_trading_signals.png
-Design notes:
-  - Monte Carlo uses quantile-derived sigma with truncation to avoid extremes.
-  - Probabilities clipped to [0.02, 0.98] to avoid certainties.
-  - Position sizing conservative: uses confidence, SNR (edge/std), and max caps.
-  - Calibration uses available y_true rows.
-"""
-import os
-import math
+import os, math
 from datetime import timedelta
 import numpy as np
 import pandas as pd

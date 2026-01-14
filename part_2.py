@@ -1,8 +1,3 @@
-"""
-Part 2: Forecasting & Model Validation
-Target: Day-ahead Price (EUR/MWh)
-"""
-
 import pandas as pd
 import numpy as np
 from sklearn.linear_model import Ridge
