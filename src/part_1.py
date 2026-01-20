@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
-import os, shutil, zipfile, math
-import warnings
+import os, shutil, zipfile, math, warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 def load_and_stack_data(zip_path):
@@ -685,7 +684,6 @@ def plot_feature_vs_target_timeseries_grid(df: pd.DataFrame,
 
     plt.tight_layout()
     plt.savefig(f"figures/feature_vs_target_timeseries_grid.png", dpi=300)
-    plt.show()
 
 plot_feature_vs_target_timeseries_grid(
     df=df_featured,

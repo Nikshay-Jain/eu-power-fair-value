@@ -42,7 +42,8 @@ root
 │   ├── qa_report_missing_blocks.csv
 │   ├── qa_report_outlier_summary.csv
 │   └── qa_report_qa_summary.txt
-│
+│       ...
+|
 ├── results/
 │   ├── part2_cv_predictions.csv
 │   ├── part2_cv_summary.csv
@@ -56,13 +57,16 @@ root
 │   ├── part4_trader_commentary.json
 │   └── part4_ai_log.txt
 │
+├── src/
+│   ├── part_1.py   # Data ingestion, cleaning, QA
+│   ├── part_2.py   # Feature engineering, forecasting, validation
+│   ├── part_3.py   # Prompt-curve signal generation
+│   └── part_4.py   # AI-driven trader commentary
+│
 ├── submission.csv
-├── part_1.py   # Data ingestion, cleaning, QA
-├── part_2.py   # Feature engineering, forecasting, validation
-├── part_3.py   # Prompt-curve signal generation
-├── part_4.py   # AI-driven trader commentary
 ├── nb.ipynb    # Optional exploration notebook
 ├── requirements.txt
+├── Report.md
 └── README.md
 ```
 
