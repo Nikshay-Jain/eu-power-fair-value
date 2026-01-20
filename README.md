@@ -200,10 +200,10 @@ If no API key is provided, the pipeline still runs with deterministic commentary
 Execute sequentially:
 
 ```
-python part_1.py   # Data ingestion + QA
-python part_2.py   # Forecasting + validation
-python part_3.py   # Prompt-curve signal generation
-python part_4.py   # AI trader commentary
+python src/part_1.py   # Data ingestion + QA
+python src/part_2.py   # Forecasting + validation
+python src/part_3.py   # Prompt-curve signal generation
+python src/part_4.py   # AI trader commentary
 ```
 
 All outputs are written to `data/`, `qa_report/`, and `results/`.
