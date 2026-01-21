@@ -32,12 +32,11 @@ root
 │   ├── cleaned_energy_data.csv
 │   └── featured_energy_data.csv
 │
-├── figures/
+├── qa_report/
 │   ├── corr_heatmap.png
 │   ├── corr_target_bar.png
-│   └── feature_vs_target_timeseries_grid.png
-│
-├── qa_report/
+│   ├── feature_vs_target_timeseries_grid.png
+│   ├── price_vs_residual_load.png
 │   ├── qa_report_missing_by_column.csv
 │   ├── qa_report_missing_blocks.csv
 │   ├── qa_report_outlier_summary.csv
@@ -64,7 +63,7 @@ root
 │   └── part_4.py   # AI-driven trader commentary
 │
 ├── submission.csv
-├── nb.ipynb    # Optional exploration notebook
+├── nb.ipynb        # Exploration notebook
 ├── requirements.txt
 ├── Report.md
 └── README.md
@@ -76,14 +75,14 @@ root
 
 ### Part 1 — Data Ingestion & QA (`part_1.py`)
 
-- Loads raw ENTSO-E ZIP archives  
-- Aligns price, load, generation, and flow data at hourly granularity  
-- Handles timezone and DST safely  
+- Loads raw ENTSO-E ZIP archives
+- Aligns price, load, generation, and flow data at hourly granularity
+- Handles timezone and DST safely
 - Performs automated QA:
-  - Missing data coverage  
-  - Duplicate timestamps  
-  - Outlier and negative-value detection  
-- Applies gap-filling where required  
+  - Missing data coverage
+  - Duplicate timestamps
+  - Outlier and negative-value detection
+- Applies gap-filling where required
 
 **Outputs**
 - `data/cleaned_energy_data.csv`  

@@ -1,30 +1,53 @@
 import pandas as pd
 import numpy as np
-import os, shutil, zipfile, math, warnings
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+from typing import Dict, Any
+from functools import reduce
+
+import os, shutil, zipfile, math, warnings, logging
 warnings.filterwarnings("ignore", category=FutureWarning)
+
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] %(levelname)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+
+os.makedirs('data', exist_ok=True)
+os.makedirs('qa_report', exist_ok=True)
+
+# =========================
+# DATA SOURCE DOCUMENTATION
+# =========================
+SOURCE_METADATA = {
+    "url": "https://transparency.entsoe.eu/",
+    "description": "ENTSO-E Transparency Platform - European electricity market data",
+    "DA Prices": "ENTSO-E / Transmission / Day Ahead Prices [12.1.D]",
+    "Actual Load": "ENTSO-E / Load / Actual Total Load [6.1.A]",
+    "Load Forecast": "ENTSO-E / Load / Day Ahead Total Load Forecast [6.1.B]",
+    "Generation": "ENTSO-E / Generation / Actual Generation per Production Type [16.1.B&C]",
+    "BZN Code": "DE-LU (10Y1001A1001A83F)"
+}
 
 def load_and_stack_data(zip_path):
     # Extract the zip file
     with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-        zip_ref.extractall('data/extracted')
+        zip_ref.extractall(os.path.join('data', 'extracted'))
 
     # Get a list of all CSV files in the extracted folder and concatenate into one DataFrame
-    csv_files = [os.path.join('data/extracted', file) for file in os.listdir('data/extracted') if file.endswith('.csv')]
-    dataframes = [pd.read_csv(csv, low_memory=False) for csv in sorted(csv_files)]
-    shutil.rmtree('data/extracted')
+    csv_files = []
+    for root, _, files in os.walk(os.path.join('data','extracted')):
+        for f in files:
+            if f.endswith('.csv'):
+                csv_files.append(os.path.join(root, f))
+
+    dataframes = [pd.read_csv(csv, low_memory=False) for csv in sorted(csv_files)]     # dealing with large dataframes
+    shutil.rmtree(os.path.join('data', 'extracted'))
     
     return pd.concat(dataframes, ignore_index=True)
-
-# Path to the zip file
-gen_path = 'data\generation.zip'
-load_path = 'data\load.zip'
-market_path = 'data\market.zip'
-prices_path = 'data\prices.zip'
-
-gen_data = load_and_stack_data(gen_path)
-load_data = load_and_stack_data(load_path)
-market_data = load_and_stack_data(market_path)
-prices_data = load_and_stack_data(prices_path)
 
 def enforce_hourly_granularity(df, value_columns):
     """
@@ -94,21 +117,6 @@ def enforce_hourly_granularity(df, value_columns):
     
     return result.reset_index(drop=True)
 
-value_cols = [
-    'Offered Capacity from BZN|DE-LU (MW)',
-    'Offered Capacity to BZN|DE-LU (MW)'
-]
-
-market_hourly = enforce_hourly_granularity(market_data, value_cols)
-market_hourly.drop(columns=['Time Interval (UTC)', 'In Area', 'Out Area', 'Classification Sequence', 'Instance Code'], inplace=True)
-value_cols = [
-    'Actual Total Load (MW)',
-    'Day-ahead Total Load Forecast (MW)'
-]
-
-load_hourly = enforce_hourly_granularity(load_data, value_cols)
-load_hourly.drop(columns=['Area'], inplace=True)
-
 def pivot_generation_by_type(df):
     """
     Pivots generation data from long to wide format.
@@ -142,34 +150,18 @@ def pivot_generation_by_type(df):
         index=['MTU (UTC)', 'Area'],   # Keep these as index
         columns='Production Type',     # Spread this into columns
         values='Generation (MW)',      # Use these values to fill
-        aggfunc='first'                # If duplicates exist, take first (shouldn't happen)
+        aggfunc='sum'                # If duplicates exist, take first (shouldn't happen)
     ).reset_index()
     
+    dups = df.groupby(["MTU (UTC)", "Area", "Production Type"]).size()
+    if (dups > 1).any():
+        logging.info("Multiple rows per MTU/Area/Production Type found — summing as intended.")
+
+
     # Flatten column names (remove multi-index if present)
     df_wide.columns.name = None
     
     return df_wide
-
-# Pivot generation data
-df_wide = pivot_generation_by_type(gen_data)
-
-# Enforce hourly granularity
-generation_cols = [col for col in df_wide.columns 
-                   if col not in ['MTU (UTC)', 'Area']]
-gen_hourly = enforce_hourly_granularity(df_wide, generation_cols)
-gen_hourly.drop(columns=['Area', 'Energy storage', 'Fossil Oil shale', 'Fossil Peat', 'Hydro Water Reservoir', 'Marine', 'Nuclear', 'Waste'], 
-                inplace=True)
-
-prices_data = prices_data[prices_data['Sequence'] == 'Sequence Sequence 1']
-prices_data.drop(columns=['Area', 'Sequence', 'Intraday Period (UTC)', 'Intraday Price (EUR/MWh)'], inplace=True)
-prices_data.reset_index(drop=True, inplace=True)
-
-value_cols = [
-    'Day-ahead Price (EUR/MWh)'
-]
-prices_hourly = enforce_hourly_granularity(prices_data, value_cols)
-
-from functools import reduce
 
 def merge_on_mtu_union(dfs, mtu_col="MTU (UTC)"):
     """
@@ -186,15 +178,6 @@ def merge_on_mtu_union(dfs, mtu_col="MTU (UTC)"):
         ),
         dfs
     )
-
-df_merged = merge_on_mtu_union(
-    [prices_hourly, market_hourly, load_hourly, gen_hourly],
-    mtu_col="MTU (UTC)"
-)
-
-df_merged = df_merged.sort_values("MTU (UTC)").reset_index(drop=True)
-
-from typing import Dict, Any, List
 
 def generate_qa_report(df: pd.DataFrame,
                        mtu_col: str = "MTU (UTC)",
@@ -237,7 +220,7 @@ def generate_qa_report(df: pd.DataFrame,
     }).sort_values("missing_count", ascending=False)
     report["missing_by_column"] = missing_df
     if output_prefix:
-        missing_df.to_csv(f"{output_prefix}\{output_prefix}_missing_by_column.csv")
+        missing_df.to_csv(os.path.join(output_prefix, f"{output_prefix}_missing_by_column.csv"))
 
     # --- Rows with at least one NaN (indices & contiguous blocks) ---
     rows_with_nan = working[working.isna().any(axis=1)].index
@@ -267,7 +250,7 @@ def generate_qa_report(df: pd.DataFrame,
     ranges_df = pd.DataFrame(ranges, columns=["start", "end", "length_hours"])
     report["missing_blocks"] = ranges_df
     if output_prefix:
-        ranges_df.to_csv(f"{output_prefix}\{output_prefix}_missing_blocks.csv", index=False)
+        ranges_df.to_csv(os.path.join(output_prefix, f"{output_prefix}_missing_blocks.csv"), index=False)
 
     # --- Duplicates ---
     # 1) duplicate MTU timestamps
@@ -280,8 +263,8 @@ def generate_qa_report(df: pd.DataFrame,
     report["full_duplicate_rows_count"] = pd.DataFrame({"full_duplicate_rows": [full_dups.shape[0]]})
     report["full_duplicates_sample"] = full_dups.head(20)
     if output_prefix:
-        dup_mtu.head(200).to_csv(f"{output_prefix}\{output_prefix}_dup_mtu_sample.csv")
-        full_dups.head(200).to_csv(f"{output_prefix}\{output_prefix}_full_dups_sample.csv")
+        dup_mtu.head(200).to_csv(os.path.join(output_prefix, f"{output_prefix}_dup_mtu_sample.csv"))
+        full_dups.head(200).to_csv(os.path.join(output_prefix, f"{output_prefix}_full_dups_sample.csv"))
 
     # --- Time continuity check ---
     expected_idx = pd.date_range(start=working.index.min(), end=working.index.max(), freq="h", tz="UTC")
@@ -295,24 +278,27 @@ def generate_qa_report(df: pd.DataFrame,
     })
     report["missing_hours_list"] = missing_hours
     if output_prefix:
-        pd.Series(missing_hours).to_csv(f"{output_prefix}\{output_prefix}_missing_hours.csv", index=False)
+        pd.Series(missing_hours).to_csv(os.path.join(output_prefix, f"{output_prefix}_missing_hours.csv"), index=False)
 
     # --- Coverage by field/time ---
     # Monthly coverage % per column
     monthly = working.copy()
+    # Remove timezone before converting to PeriodIndex to avoid warning
+    if hasattr(monthly.index, 'tz') and monthly.index.tz is not None:
+        monthly.index = monthly.index.tz_convert(None)
     monthly["__month"] = monthly.index.to_period("M")
     monthly_coverage = monthly.groupby("__month").apply(lambda g: g.isna().mean()).T
     monthly_coverage.columns = monthly_coverage.columns.astype(str)
     report["monthly_missing_pct_by_column"] = monthly_coverage
     if output_prefix:
-        monthly_coverage.to_csv(f"{output_prefix}\{output_prefix}_monthly_missing_pct_by_column.csv")
+        monthly_coverage.to_csv(os.path.join(output_prefix, f"{output_prefix}_monthly_missing_pct_by_column.csv"))
 
     # Hour-of-day coverage (0-23) per column
     hod_cov = working.groupby(working.index.hour).apply(lambda g: g.isna().mean()).T
     hod_cov.columns = [f"hour_{h}" for h in hod_cov.columns]
     report["hour_of_day_missing_pct_by_column"] = hod_cov
     if output_prefix:
-        hod_cov.to_csv(f"{output_prefix}\{output_prefix}_hod_missing_pct_by_column.csv")
+        hod_cov.to_csv(os.path.join(output_prefix, f"{output_prefix}_hod_missing_pct_by_column.csv"))
 
     # --- Outlier detection (robust) ---
     numeric = working.select_dtypes(include=[np.number]).copy()
@@ -351,22 +337,25 @@ def generate_qa_report(df: pd.DataFrame,
     report["outlier_summary"] = outlier_df
     report["outlier_samples"] = outlier_samples
     if output_prefix:
-        outlier_df.to_csv(f"{output_prefix}\{output_prefix}_outlier_summary.csv")
+        outlier_df.to_csv(os.path.join(output_prefix, f"{output_prefix}_outlier_summary.csv"))
         # write sample outliers to separate files per column (limited)
         for c, sample in outlier_samples.items():
             if sample.shape[0] > 0:
                 safe_name = "".join(ch if ch.isalnum() or ch in "_-" else "_" for ch in c)
-                sample.to_csv(f"{output_prefix}\{output_prefix}_outliers_{safe_name}.csv", index=False)
+                sample.to_csv(os.path.join(output_prefix, f"{output_prefix}_outliers_{safe_name}.csv"), index=False)
 
-    # --- Obvious negative-value check for columns usually non-negative ---
+    # --- Negative-value check (Context-aware) ---
     neg_summary = []
     for col in numeric.columns:
         neg_count = int((working[col] < 0).sum())
-        neg_summary.append((col, neg_count))
-    neg_df = pd.DataFrame(neg_summary, columns=["column", "negative_count"]).sort_values("negative_count", ascending=False)
+
+        # Highlight: DA Prices can be negative, Load/Gen cannot.
+        is_error = neg_count > 0 and "Price" not in col 
+        neg_summary.append((col, neg_count, "DATA_ERROR" if is_error else "MARKET_SIGNAL"))
+    neg_df = pd.DataFrame(neg_summary, columns=["column", "negative_count", "interpretation"])
     report["negative_values_summary"] = neg_df
     if output_prefix:
-        neg_df.to_csv(f"{output_prefix}\{output_prefix}_negative_values_summary.csv")
+        neg_df.to_csv(os.path.join(output_prefix, f"{output_prefix}_negative_values_summary.csv"))
 
     # --- Quick textual summary (few lines) ---
     summary_lines = []
@@ -378,22 +367,11 @@ def generate_qa_report(df: pd.DataFrame,
     summary_text = "\n\n".join(summary_lines)
     report["summary_text"] = summary_text
     if output_prefix:
-        neg_df.to_csv(f"{output_prefix}\{output_prefix}_negative_values_summary.csv")
-        with open(f"{output_prefix}\{output_prefix}_qa_summary.txt", "w") as f:
+        neg_df.to_csv(os.path.join(output_prefix, f"{output_prefix}_negative_values_summary.csv"))
+        with open(os.path.join(output_prefix, f"{output_prefix}_qa_summary.txt"), "w") as f:
             f.write(summary_text)
 
     return report
-
-report = generate_qa_report(df_merged, mtu_col="MTU (UTC)", output_prefix="qa_report")
-print(report["summary_text"])
-
-# Inspect detailed tables:
-report["missing_by_column"].head(50)
-report["missing_blocks"]
-report["duplicate_mtu_sample"]
-report["outlier_summary"].head(50)
-
-df_merged[df_merged.isnull().any(axis=1)].index.tolist()
 
 def impute_energy_ts(df, mtu_col):
     out = df.copy()
@@ -407,7 +385,7 @@ def impute_energy_ts(df, mtu_col):
     for col in num_cols:
         s = out[col]
 
-        # 1. same hour previous day
+        # 1. same hour previous da
         s = s.fillna(s.shift(24))
 
         # 2. same hour previous week
@@ -420,9 +398,6 @@ def impute_energy_ts(df, mtu_col):
         out[col] = s
 
     return out.reset_index(drop=True)
-
-df_imputed = impute_energy_ts(df_merged, "MTU (UTC)")
-df_imputed.to_csv("data\\cleaned_energy_data.csv", index=False)
 
 class PowerFeatureEngineer:
     def __init__(self, target_col: str = "Day Ahead Price (EUR/MWh)"):
@@ -496,12 +471,12 @@ class PowerFeatureEngineer:
         """Lagged values (avoid leakage)"""
         # Price lags (if target exists)
         if self.target_col in df.columns:
-            df["price_lag_24h"] = df[self.target_col].shift(24).fillna(method='bfill')
-            df["price_lag_168h"] = df[self.target_col].shift(168).fillna(method='bfill')
+            df["price_lag_24h"] = df[self.target_col].shift(24)
+            df["price_lag_168h"] = df[self.target_col].shift(168)
         
         # Residual load lags
-        df["resload_lag_24h"] = df["residual_load_mw"].shift(24).fillna(method='bfill')
-        df["resload_lag_168h"] = df["residual_load_mw"].shift(168).fillna(method='bfill')
+        df["resload_lag_24h"] = df["residual_load_mw"].shift(24)
+        df["resload_lag_168h"] = df["residual_load_mw"].shift(168)
         
         return df
     
@@ -512,7 +487,6 @@ class PowerFeatureEngineer:
             df["residual_load_mw"].shift(1)
             .rolling(24, min_periods=1)
             .mean()
-            .fillna(method='bfill')
         )
         
         # Price volatility (if target exists)
@@ -546,35 +520,10 @@ class PowerFeatureEngineer:
         
         return [c for c in df.columns if c not in exclude]
 
-df = pd.read_csv("data/cleaned_energy_data.csv")
-
-# Create features
-engineer = PowerFeatureEngineer(target_col="Day-ahead Price (EUR/MWh)")
-df_featured = engineer.create_all_features(df)
-
-# Get feature list
-features = engineer.get_feature_columns(df_featured)
-print(f"Created {len(features)} features")
-print(f"Sample features: {features[:15]}")
-
-# Check for NaNs
-nan_counts = df_featured[features].isna().sum()
-if nan_counts.sum() > 0:
-    print(f"\nWarning: {nan_counts.sum()} total NaN values found")
-    print(nan_counts[nan_counts > 0])
-else:
-    print("\n✓ No NaN values in features")
-
-# Save
-df_featured.to_csv("data/featured_energy_data.csv", index=False)
-print(f"\n✓ Saved to data/featured_energy_data.csv ({len(df_featured)} rows)")
-
-import matplotlib.pyplot as plt
-
-def correlation_analysis(df: pd.DataFrame,
-                         target_col: str,
-                         timestamp_col: str = "timestamp",
-                         output_prefix: str = "corr"):
+def corr_analysis(df: pd.DataFrame,
+                 target_col: str,
+                 timestamp_col: str = "timestamp",
+                 output_prefix: str = "corr"):
 
     # ---- Prepare numeric-only dataframe ----
     dfc = df.copy()
@@ -589,15 +538,24 @@ def correlation_analysis(df: pd.DataFrame,
     # ---- Correlation matrix ----
     corr_matrix = dfc.corr(method="pearson")
 
-    # ---- Save full heatmap ----
-    plt.figure(figsize=(14,10))
-    plt.imshow(corr_matrix, cmap="coolwarm", vmin=-1, vmax=1)
-    plt.colorbar(label="Correlation")
-    plt.xticks(range(len(corr_matrix.columns)), corr_matrix.columns, rotation=90)
-    plt.yticks(range(len(corr_matrix.columns)), corr_matrix.columns)
-    plt.title("Feature Correlation Matrix")
-    plt.tight_layout()
-    plt.savefig(f"figures/{output_prefix}_heatmap.png", dpi=300)
+    # ---- Save full heatmap using seaborn clustermap ----
+    # Mask small correlations for clarity
+    mask = np.abs(corr_matrix) < 0.2
+    # Set diagonal to False so main diagonal is always shown
+    np.fill_diagonal(mask.values, False)
+    sns.set(font_scale=0.7)
+    g = sns.clustermap(
+        corr_matrix,
+        cmap="coolwarm",
+        vmin=-1, vmax=1,
+        linewidths=0.1,
+        figsize=(14, 12),
+        mask=mask,
+        annot=False,
+        cbar_kws={"label": "Correlation"}
+    )
+    plt.title("Feature Correlation Matrix (Clustered)", pad=80)
+    plt.savefig(os.path.join("qa_report", f"{output_prefix}_heatmap.png"), dpi=300)
     plt.close()
 
     # ---- Correlation vs target ----
@@ -608,34 +566,18 @@ def correlation_analysis(df: pd.DataFrame,
     plt.title(f"Feature Correlation vs Target: {target_col}")
     plt.xlabel("Pearson Correlation")
     plt.tight_layout()
-    plt.savefig(f"figures/{output_prefix}_target_bar.png", dpi=300)
+    plt.savefig(os.path.join("qa_report", f"{output_prefix}_target_bar.png"), dpi=300)
     plt.close()
 
-    # ---- Return correlation table ----
-    corr_table = target_corr.reset_index()
-    corr_table.columns = ["feature", "correlation"]
-
-    return corr_matrix, corr_table
-
-corr_matrix, corr_table = correlation_analysis(
-    df=df_featured,
-    target_col="Day-ahead Price (EUR/MWh)"   # change if needed
-)
-
-def plot_feature_vs_target_timeseries_grid(df: pd.DataFrame,
-                                            target_col: str,
-                                            timestamp_col: str = "timestamp",
-                                            max_points: int = 20000):
-    """
-    Time-series plots:
-    X-axis = timestamp
-    Y-axis = target + one feature
-    2 plots per row for wide time axis
-    """
-
-    dfp = df.copy()
-
+def plotting(df: pd.DataFrame, 
+             target_col: str,
+             resload_col: str = "residual_load_mw", 
+             output_path: str = os.path.join("qa_report", "price_vs_residual_load.png"),
+             timestamp_col: str = "timestamp",
+             max_points: int = 20000):
+    
     # Sort by time
+    dfp = df.copy()
     dfp[timestamp_col] = pd.to_datetime(dfp[timestamp_col], utc=True)
     dfp = dfp.sort_values(timestamp_col)
 
@@ -683,9 +625,128 @@ def plot_feature_vs_target_timeseries_grid(df: pd.DataFrame,
         fig.delaxes(axes[j])
 
     plt.tight_layout()
-    plt.savefig(f"figures/feature_vs_target_timeseries_grid.png", dpi=300)
+    plt.savefig(os.path.join("qa_report", f"feature_vs_target_timeseries_grid.png"), dpi=300)
+    plt.close()
+    logging.info("Saved feature vs target time-series grid plot to qa_report/feature_vs_target_timeseries_grid.png")
 
-plot_feature_vs_target_timeseries_grid(
-    df=df_featured,
-    target_col="Day-ahead Price (EUR/MWh)"
-)
+    plt.figure(figsize=(8, 6))
+    plt.scatter(df[resload_col], df[target_col], alpha=0.3, s=10, color='royalblue')
+    plt.xlabel("Residual Load (MW)")
+    plt.ylabel("Day-ahead Price (EUR/MWh)")
+    plt.title("Price vs. Residual Load (Merit Order Curve)")
+    plt.grid(True, alpha=0.2)
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=300)
+    plt.close()
+    logging.info("Saved Price vs. Residual Load plot to %s", output_path)
+
+def main():
+    gen_path = os.path.join('data', 'generation.zip')
+    load_path = os.path.join('data', 'load.zip')
+    market_path = os.path.join('data', 'market.zip')
+    prices_path = os.path.join('data', 'prices.zip')
+
+    logging.info("Loading and processing data...")
+    gen_data = load_and_stack_data(gen_path)
+    load_data = load_and_stack_data(load_path)
+    market_data = load_and_stack_data(market_path)
+    prices_data = load_and_stack_data(prices_path)
+    
+    logging.info("Data loaded: Generation (%d rows), Load (%d rows), Market (%d rows), Prices (%d rows)",
+                 len(gen_data), len(load_data), len(market_data), len(prices_data))
+    
+    value_cols = [
+        'Offered Capacity from BZN|DE-LU (MW)',
+        'Offered Capacity to BZN|DE-LU (MW)'
+    ]
+
+    logging.info("Enforcing hourly granularity...")
+    market_hourly = enforce_hourly_granularity(market_data, value_cols)
+    market_hourly.drop(columns=['Time Interval (UTC)', 'In Area', 'Out Area', 'Classification Sequence', 'Instance Code'], errors='ignore', inplace=True)
+    value_cols = [
+        'Actual Total Load (MW)',
+        'Day-ahead Total Load Forecast (MW)'
+    ]
+    load_hourly = enforce_hourly_granularity(load_data, value_cols)
+    load_hourly.drop(columns=['Area'], inplace=True)
+
+    # Pivot generation data
+    df_wide = pivot_generation_by_type(gen_data)
+    
+    # Enforce hourly granularity
+    generation_cols = [col for col in df_wide.columns 
+                       if col not in ['MTU (UTC)', 'Area']]
+    gen_hourly = enforce_hourly_granularity(df_wide, generation_cols)
+
+    # drop columns like 'Area' and less relevant production types and Nuclear as Germany droped the usage to 0 MW popst 2023
+    gen_hourly.drop(columns=['Area', 'Energy storage', 'Fossil Oil shale', 'Fossil Peat', 'Hydro Water Reservoir', 'Marine', 'Nuclear', 'Waste'], 
+                    errors='ignore',
+                    inplace=True)
+
+    prices_data = prices_data[prices_data['Sequence'] == 'Sequence Sequence 1']
+    prices_data.drop(columns=['Area', 'Sequence', 'Intraday Period (UTC)', 'Intraday Price (EUR/MWh)'], errors='ignore', inplace=True)
+    prices_data.reset_index(drop=True, inplace=True)
+    
+    value_cols = [
+        'Day-ahead Price (EUR/MWh)'
+    ]
+    prices_hourly = enforce_hourly_granularity(prices_data, value_cols)
+    
+    logging.info("Merging datasets...")
+    df_merged = merge_on_mtu_union(
+        [prices_hourly, market_hourly, load_hourly, gen_hourly],
+        mtu_col="MTU (UTC)"
+    )
+    df_merged = df_merged.sort_values("MTU (UTC)").reset_index(drop=True)
+
+    report = generate_qa_report(df_merged, mtu_col="MTU (UTC)", output_prefix="qa_report")
+    logging.info("\nQA Report Summary:\n%s\n", report["summary_text"])
+
+    # Inspect detailed tables:
+    _ = report["missing_by_column"].head(50)
+    _ = report["missing_blocks"]
+    _ = report["duplicate_mtu_sample"]
+    _ = report["outlier_summary"].head(50)
+    _ = df_merged[df_merged.isnull().any(axis=1)].index.tolist()
+
+    df_imputed = impute_energy_ts(df_merged, "MTU (UTC)")
+    df_imputed.to_csv(os.path.join("data", "cleaned_energy_data.csv"), index=False)
+
+    df = pd.read_csv(os.path.join("data", "cleaned_energy_data.csv"))
+
+    # Create features
+    engineer = PowerFeatureEngineer(target_col="Day-ahead Price (EUR/MWh)")
+    df_featured = engineer.create_all_features(df)
+
+    # Get feature list
+    features = engineer.get_feature_columns(df_featured)
+    logging.info("Created %d features", len(features))
+    logging.info("Sample features: %s", features[:15])
+
+    # Check for NaNs
+    nan_counts = df_featured[features].isna().sum()
+    if nan_counts.sum() > 0:
+        logging.warning("%d total NaN values found", nan_counts.sum())
+        logging.warning("NaN counts by feature: %s", nan_counts[nan_counts > 0].to_dict())
+    else:
+        logging.info("No NaN values in features")
+
+    df_featured.to_csv(os.path.join("data", "featured_energy_data.csv"), index=False)
+    logging.info("Saved to data/featured_energy_data.csv (%d rows)", len(df_featured))
+
+    corr_analysis(
+        df=df_featured,
+        target_col="Day-ahead Price (EUR/MWh)"
+    )
+    logging.info("Saved correlation analysis plots to qa_report/")
+
+    plotting(
+        df=df_featured,
+        target_col="Day-ahead Price (EUR/MWh)",
+        resload_col="residual_load_mw",
+        output_path="qa_report/price_vs_residual_load.png"
+    )
+    logging.info("Saved plotting outputs to qa_report/")
+
+if __name__ == "__main__":
+    main()
