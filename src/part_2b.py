@@ -21,33 +21,6 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
-def corr_analysis(df: pd.DataFrame,
-                 target_col: str,
-                 timestamp_col: str = "timestamp",
-                 output_prefix: str = "corr",
-                 threshold: float = 0.1):
-
-    # Prepare numeric-only dataframe
-    dfc = df.copy()
-    if timestamp_col in dfc.columns:
-        dfc = dfc.drop(columns=[timestamp_col])
-
-    dfc = dfc.select_dtypes(include=[np.number])
-
-    if target_col not in dfc.columns:
-        raise KeyError(f"Target column '{target_col}' not found in dataframe")
-
-    # Correlation matrix
-    corr_matrix = dfc.corr(method="pearson")
-
-    # Dynamic Feature Selection Logic
-    target_corr = corr_matrix[target_col].drop(target_col)
-    
-    # Filter features where |correlation| >= threshold
-    selected_features = target_corr[target_corr.abs() >= threshold].index.tolist()
-    
-    return selected_features
-
 # =======================
 # Walk-Forward Validator
 # =======================
@@ -106,16 +79,17 @@ def train_ridge(X_train, y_train, X_test):
 
 def train_lightgbm(X_train, y_train, X_test, quantile=None, early_stopping_rounds=250):
     params = {
-        'objective': 'quantile' if quantile else 'regression',
-        'metric': 'quantile' if quantile else 'mse',
+        'objective': 'quantile' if quantile else 'regression_l1',
+        'metric': 'quantile' if quantile else 'mae',
         'boosting_type': 'gbdt',
-        'num_leaves': 64,
-        'learning_rate': 0.05,
-        'feature_fraction': 0.8,
+        'num_boost_round': 5000,
+        'num_leaves': 100,
+        'learning_rate': 0.01,
+        'feature_fraction': 0.7,
         'bagging_fraction': 0.8,
-        'bagging_freq': 5,
-        'max_depth': 8,
-        'min_data_in_leaf': 50,
+        'bagging_freq': 1,
+        'max_depth': -1,
+        'min_data_in_leaf': 20,
         'lambda_l1': 0.1,
         'lambda_l2': 0.1,
         'verbose': -1,
@@ -135,7 +109,12 @@ def train_lightgbm(X_train, y_train, X_test, quantile=None, early_stopping_round
         val_set = lgb.Dataset(X_train.iloc[cut:].fillna(0), label=y_train.iloc[cut:])
         model = lgb.train(params, train_set, num_boost_round=500,
                           valid_sets=[train_set, val_set],
-                          valid_names=['train','valid'])
+                          valid_names=['train','valid'],
+                          callbacks=[
+                            lgb.early_stopping(stopping_rounds=early_stopping_rounds),
+                            lgb.log_evaluation(period=0)
+        ])
+        
     else:
         train_set = lgb.Dataset(X_train.fillna(0), label=y_train)
         model = lgb.train(params, train_set, num_boost_round=200, verbose_eval=False)
@@ -391,12 +370,7 @@ def main():
     logging.info(f"Loaded {len(df):,} rows")
     logging.info(f"Date range: {df['timestamp'].min()} to {df['timestamp'].max()}")
     
-    # Set Threshold
-    SELECTED_FEATURES = corr_analysis(
-        df=df,
-        target_col=TARGET,
-        threshold=0.0
-    )
+    SELECTED_FEATURES = df.drop(columns=['MTU (UTC)', 'timestamp', TARGET]).columns.tolist()
     logging.info(f"Selected {len(SELECTED_FEATURES)} features \n{SELECTED_FEATURES}\n")
     
     # Walk-forward CV
