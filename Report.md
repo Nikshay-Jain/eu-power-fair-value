@@ -64,9 +64,6 @@ This ensures downstream modeling receives a consistent, auditable dataset.
 <p align="center">
 <img src="figures/corr_target_bar.png" alt="Target Correlation Bar" width="500"/>
 </p>
-<p align="center">
-<img src="figures/feature_vs_target_timeseries_grid.png" alt="Feature vs Target Timeseries Grid" width="700"/>
-</p>
 
 ---
 
