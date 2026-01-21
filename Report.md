@@ -59,10 +59,10 @@ This ensures downstream modeling receives a consistent, auditable dataset.
 #### Data QA and Correlation Visuals
 
 <p align="center">
-<img src="figures/corr_heatmap.png" alt="Correlation Heatmap" width="500"/>
+<img src="results\part2_corr_heatmap.png" alt="Correlation Heatmap" width="500"/>
 </p>
 <p align="center">
-<img src="figures/corr_target_bar.png" alt="Target Correlation Bar" width="500"/>
+<img src="results\part2_corr_target_bar.png" alt="Target Correlation Bar" width="500"/>
 </p>
 
 ---

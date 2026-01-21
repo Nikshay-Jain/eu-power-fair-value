@@ -1,21 +1,272 @@
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
 from sklearn.linear_model import Ridge
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 import lightgbm as lgb
-import matplotlib.pyplot as plt
-import seaborn as sns
-import warnings
-warnings.filterwarnings('ignore')
 
+import os, math, warnings, logging
+
+warnings.filterwarnings('ignore')
 sns.set_style('whitegrid')
+os.makedirs('results', exist_ok=True)
+
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] %(levelname)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 
 # ============================================================================
 # Configuration
 # ============================================================================
 TARGET = "Day-ahead Price (EUR/MWh)"
-DATA_FILE = "data/featured_energy_data.csv"
+
+
+class PowerFeatureEngineer:
+    def __init__(self, target_col: str = "Day Ahead Price (EUR/MWh)"):
+        self.target_col = target_col
+    
+    def create_all_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Create complete feature set with no NaN gaps."""
+        df = df.copy()
+        
+        # Parse timestamp
+        df["timestamp"] = pd.to_datetime(
+            df["MTU (UTC)"].str.split(" - ").str[0],
+            dayfirst=True, utc=True
+        )
+        df = df.sort_values("timestamp").reset_index(drop=True)
+        
+        # Core features
+        df = self._create_residual_load(df)
+        df = self._create_temporal_features(df)
+        df = self._create_lag_features(df)
+        df = self._create_rolling_features(df)
+        df = self._create_interaction_features(df)
+        
+        return df
+    
+    def _create_residual_load(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Residual Load = Load - Renewables
+        Most important feature (0.9 correlation with price)
+        """
+        # Total renewables (actual)
+        wind_on = df["Wind Onshore"].fillna(0)
+        wind_off = df["Wind Offshore"].fillna(0)
+        solar = df["Solar"].fillna(0)
+        
+        df["total_renewable_mw"] = wind_on + wind_off + solar
+        
+        # Residual load (actual)
+        load_actual = df["Actual Total Load (MW)"].fillna(df["Day-ahead Total Load Forecast (MW)"])
+        df["residual_load_mw"] = load_actual - df["total_renewable_mw"]
+        
+        # Renewable penetration
+        df["renewable_penetration"] = df["total_renewable_mw"] / (load_actual + 1e-6)
+        
+        # Individual renewable components
+        df["wind_total_mw"] = wind_on + wind_off
+        df["solar_mw"] = solar
+        
+        return df
+    
+    def _create_temporal_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Time-based patterns"""
+        ts = df["timestamp"]
+        
+        df["hour"] = ts.dt.hour
+        df["day_of_week"] = ts.dt.dayofweek
+        df["month"] = ts.dt.month
+        df["is_weekend"] = (df["day_of_week"] >= 5).astype(int)
+        
+        # Cyclical encoding
+        df["hour_sin"] = np.sin(2 * np.pi * df["hour"] / 24)
+        df["hour_cos"] = np.cos(2 * np.pi * df["hour"] / 24)
+        df["dow_sin"] = np.sin(2 * np.pi * df["day_of_week"] / 7)
+        df["dow_cos"] = np.cos(2 * np.pi * df["day_of_week"] / 7)
+        df["month_sin"] = np.sin(2 * np.pi * df["month"] / 12)
+        df["month_cos"] = np.cos(2 * np.pi * df["month"] / 12)
+        
+        return df
+    
+    def _create_lag_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Lagged values (avoid leakage)"""
+        # Price lags (if target exists)
+        if self.target_col in df.columns:
+            df["price_lag_24h"] = df[self.target_col].shift(24)
+            df["price_lag_168h"] = df[self.target_col].shift(168)
+        
+        # Residual load lags
+        df["resload_lag_24h"] = df["residual_load_mw"].shift(24)
+        df["resload_lag_168h"] = df["residual_load_mw"].shift(168)
+        
+        return df
+    
+    def _create_rolling_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Rolling statistics"""
+        # 24-hour rolling mean (shifted to avoid leakage)
+        df["resload_rolling_mean_24h"] = (
+            df["residual_load_mw"].shift(1)
+            .rolling(24, min_periods=1)
+            .mean()
+        )
+        
+        # Price volatility (if target exists)
+        if self.target_col in df.columns:
+            df["price_rolling_std_24h"] = (
+                df[self.target_col].shift(1)
+                .rolling(24, min_periods=1)
+                .std()
+                .fillna(0)
+            )
+        
+        return df
+    
+    def _create_interaction_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Cross features"""
+        df["hour_x_weekend"] = df["hour"] * df["is_weekend"]
+        df["resload_x_hour"] = df["residual_load_mw"] * df["hour"]
+        df["renew_pen_x_hour"] = df["renewable_penetration"] * df["hour"]
+        
+        return df
+    
+    def get_feature_columns(self, df: pd.DataFrame):
+        """Return list of feature columns (exclude target and metadata)"""
+        exclude = ["MTU (UTC)", "timestamp", self.target_col]
+        # Also exclude raw generation columns
+        raw_gen = ["Biomass", "Fossil Brown coal/Lignite", "Fossil Coal-derived gas",
+                   "Fossil Gas", "Fossil Hard coal", "Fossil Oil", "Geothermal",
+                   "Hydro Pumped Storage", "Hydro Run-of-river and pondage",
+                   "Other", "Other renewable"]
+        exclude.extend(raw_gen)
+        
+        return [c for c in df.columns if c not in exclude]
+
+def corr_analysis(df: pd.DataFrame,
+                 target_col: str,
+                 timestamp_col: str = "timestamp",
+                 output_prefix: str = "corr"):
+
+    # ---- Prepare numeric-only dataframe ----
+    dfc = df.copy()
+    if timestamp_col in dfc.columns:
+        dfc = dfc.drop(columns=[timestamp_col])
+
+    dfc = dfc.select_dtypes(include=[np.number])
+
+    if target_col not in dfc.columns:
+        raise KeyError("Target column not found in dataframe")
+
+    # ---- Correlation matrix ----
+    corr_matrix = dfc.corr(method="pearson")
+
+    # ---- Save full heatmap using seaborn clustermap ----
+    # Mask small correlations for clarity
+    mask = np.abs(corr_matrix) < 0.2
+    # Set diagonal to False so main diagonal is always shown
+    np.fill_diagonal(mask.values, False)
+    sns.set(font_scale=0.7)
+    g = sns.clustermap(
+        corr_matrix,
+        cmap="coolwarm",
+        vmin=-1, vmax=1,
+        linewidths=0.1,
+        figsize=(14, 12),
+        mask=mask,
+        annot=False,
+        cbar_kws={"label": "Correlation"}
+    )
+    plt.title("Feature Correlation Matrix (Clustered)", pad=80)
+    plt.savefig(os.path.join("results", f"part2_{output_prefix}_heatmap.png"), dpi=300)
+    plt.close()
+
+    # ---- Correlation vs target ----
+    target_corr = corr_matrix[target_col].drop(target_col).sort_values()
+
+    plt.figure(figsize=(8,10))
+    target_corr.plot(kind="barh")
+    plt.title(f"Feature Correlation vs Target: {target_col}")
+    plt.xlabel("Pearson Correlation")
+    plt.tight_layout()
+    plt.savefig(os.path.join("results", f"part2_{output_prefix}_target_bar.png"), dpi=300)
+    plt.close()
+
+def feat_plotting(df: pd.DataFrame, 
+             target_col: str,
+             resload_col: str = "residual_load_mw", 
+             output_path: str = os.path.join("results", "part2_price_vs_residual_load.png"),
+             timestamp_col: str = "timestamp",
+             max_points: int = 20000):
+    
+    # Sort by time
+    dfp = df.copy()
+    dfp[timestamp_col] = pd.to_datetime(dfp[timestamp_col], utc=True)
+    dfp = dfp.sort_values(timestamp_col)
+
+    # Downsample if too large
+    if len(dfp) > max_points:
+        dfp = dfp.iloc[np.linspace(0, len(dfp)-1, max_points).astype(int)]
+
+    time = dfp[timestamp_col].values
+
+    # Numeric features only (excluding target)
+    numeric_cols = dfp.select_dtypes(include=[np.number]).columns.tolist()
+    numeric_cols = [c for c in numeric_cols if c != target_col]
+
+    n_feats = len(numeric_cols)
+    n_cols = 2
+    n_rows = math.ceil(n_feats / n_cols)
+
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(14, 4*n_rows), sharex=True)
+    axes = axes.flatten()
+
+    for i, col in enumerate(numeric_cols):
+        ax = axes[i]
+
+        # Plot target
+        ax.scatter(time, dfp[target_col].values, s=8, alpha=0.25, label=target_col)
+
+        # Plot feature (scaled for visibility)
+        feature_vals = dfp[col].values
+        # Normalize feature for overlay
+        f_norm = (feature_vals - np.nanmean(feature_vals)) / (np.nanstd(feature_vals) + 1e-6)
+        f_norm = f_norm * np.nanstd(dfp[target_col].values) + np.nanmean(dfp[target_col].values)
+
+        ax.scatter(time, f_norm, s=8, alpha=0.25, label=col)
+
+        ax.set_title(col, fontsize=9)
+        ax.grid(True, alpha=0.3)
+
+        if i % 2 == 0:
+            ax.set_ylabel("Scaled Value")
+
+        ax.legend(fontsize=8)
+
+    # Remove unused axes
+    for j in range(i+1, len(axes)):
+        fig.delaxes(axes[j])
+
+    plt.tight_layout()
+    plt.savefig(os.path.join("results", f"part2_feature_vs_target_timeseries_grid.png"), dpi=300)
+    plt.close()
+    logging.info("Saved feature vs target time-series grid plot to results/feature_vs_target_timeseries_grid.png")
+
+    plt.figure(figsize=(8, 6))
+    plt.scatter(df[resload_col], df[target_col], alpha=0.3, s=10, color='royalblue')
+    plt.xlabel("Residual Load (MW)")
+    plt.ylabel("Day-ahead Price (EUR/MWh)")
+    plt.title("Price vs. Residual Load (Merit Order Curve)")
+    plt.grid(True, alpha=0.2)
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=300)
+    plt.close()
+    logging.info("Saved Price vs. Residual Load plot to %s", output_path)
 
 # High correlation features (|corr| > 0.28 from analysis)
 SELECTED_FEATURES = ['renewable_penetration', 'total_renewable_mw', 'renew_pen_x_hour',
@@ -350,12 +601,46 @@ def create_plots(cv_predictions, final_predictions, importance):
 # Main Execution
 # ============================================================================
 def main():
-    import os
-    os.makedirs('results', exist_ok=True)
-    
     # Load data
     print("Loading data...")
-    df = pd.read_csv(DATA_FILE)
+    df = pd.read_csv(os.path.join("data", "cleaned_energy_data.csv"))
+        
+    # Create features
+    engineer = PowerFeatureEngineer(target_col="Day-ahead Price (EUR/MWh)")
+    df_featured = engineer.create_all_features(df)
+
+    # Get feature list
+    features = engineer.get_feature_columns(df_featured)
+    logging.info("Created %d features", len(features))
+    logging.info("Sample features: %s", features[:15])
+
+    # Check for NaNs
+    nan_counts = df_featured[features].isna().sum()
+    if nan_counts.sum() > 0:
+        logging.warning("%d total NaN values found", nan_counts.sum())
+        logging.warning("NaN counts by feature: %s", nan_counts[nan_counts > 0].to_dict())
+    else:
+        logging.info("No NaN values in features")
+
+    df_featured.to_csv(os.path.join("data", "featured_energy_data.csv"), index=False)
+    logging.info("Saved to data/featured_energy_data.csv (%d rows)", len(df_featured))
+
+    corr_analysis(
+        df=df_featured,
+        target_col="Day-ahead Price (EUR/MWh)"
+    )
+    logging.info("Saved correlation analysis plots to results/")
+
+    feat_plotting(
+        df=df_featured,
+        target_col="Day-ahead Price (EUR/MWh)",
+        resload_col="residual_load_mw",
+        output_path=os.path.join("results", "price_vs_residual_load.png")
+    )
+    logging.info("Saved plotting outputs to results/")
+
+    df = df_featured.copy()
+
     df['timestamp'] = pd.to_datetime(df['timestamp'])
     df = df.sort_values('timestamp').reset_index(drop=True)
     
@@ -364,35 +649,35 @@ def main():
     
     print(f"Loaded {len(df):,} rows")
     print(f"Date range: {df['timestamp'].min()} to {df['timestamp'].max()}")
+
+    # # Walk-forward CV
+    # summary, cv_predictions = run_walk_forward_cv(df, SELECTED_FEATURES, TARGET)
     
-    # Walk-forward CV
-    summary, cv_predictions = run_walk_forward_cv(df, SELECTED_FEATURES, TARGET)
+    # # Save CV results
+    # pd.DataFrame(summary).T.to_csv('results/part2_cv_summary.csv')
+    # cv_predictions.to_csv('results/part2_cv_predictions.csv', index=False)
     
-    # Save CV results
-    pd.DataFrame(summary).T.to_csv('results/part2_cv_summary.csv')
-    cv_predictions.to_csv('results/part2_cv_predictions.csv', index=False)
+    # # Train final model
+    # submission, final_predictions, importance = train_final_model(df, SELECTED_FEATURES, TARGET)
     
-    # Train final model
-    submission, final_predictions, importance = train_final_model(df, SELECTED_FEATURES, TARGET)
+    # # Save outputs
+    # submission.to_csv('results/submission.csv', index=False)
+    # final_predictions.to_csv('results/part2_final_predictions.csv', index=False)
+    # importance.to_csv('results/part2_feature_importance.csv', index=False)
     
-    # Save outputs
-    submission.to_csv('results/submission.csv', index=False)
-    final_predictions.to_csv('results/part2_final_predictions.csv', index=False)
-    importance.to_csv('results/part2_feature_importance.csv', index=False)
+    # # Create plots
+    # create_plots(cv_predictions, final_predictions, importance)
     
-    # Create plots
-    create_plots(cv_predictions, final_predictions, importance)
-    
-    print("\n" + "="*70)
-    print("✅ PART 2 COMPLETE")
-    print("="*70)
-    print("Outputs:")
-    print("  • results/submission.csv - Out-of-sample predictions")
-    print("  • results/part2_cv_summary.csv - CV metrics")
-    print("  • results/part2_cv_predictions.csv - All CV predictions")
-    print("  • results/part2_final_predictions.csv - Test set with P10/P50/P90")
-    print("  • results/part2_feature_importance.csv - Feature rankings")
-    print("  • results/part2_forecasting_results.png - Visualizations")
+    # print("\n" + "="*70)
+    # print("PART 2 COMPLETE")
+    # print("="*70)
+    # print("Outputs:")
+    # print("  • results/submission.csv - Out-of-sample predictions")
+    # print("  • results/part2_cv_summary.csv - CV metrics")
+    # print("  • results/part2_cv_predictions.csv - All CV predictions")
+    # print("  • results/part2_final_predictions.csv - Test set with P10/P50/P90")
+    # print("  • results/part2_feature_importance.csv - Feature rankings")
+    # print("  • results/part2_forecasting_results.png - Visualizations")
 
 if __name__ == "__main__":
     main()
