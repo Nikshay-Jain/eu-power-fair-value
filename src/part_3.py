@@ -1,9 +1,17 @@
-import os, math
-from datetime import timedelta
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+
 from scipy.stats import truncnorm
+import os, math, logging
+from datetime import timedelta
+
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] %(levelname)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 
 # ---------------------------
 # Configuration (tweakable)
@@ -14,7 +22,7 @@ PNG_OUT = os.path.join(OUTPUT_DIR, "part3_trading_signals.png")
 CSV_OUT = os.path.join(OUTPUT_DIR, "part3_trading_signals.csv")
 REPORT_OUT = os.path.join(OUTPUT_DIR, "part3_trading_reports.txt")
 
-SIGNAL_THRESHOLD = 5.0           # EUR/MWh minimum edge to consider trading
+SIGNAL_THRESHOLD = 5.0          # EUR/MWh minimum edge to consider trading
 CONFIDENCE_THRESHOLD = 0.60     # minimum adjusted win probability to trade
 MAX_POSITION_MW = 20.0          # absolute cap on MW position
 MC_SAMPLES = 5000
@@ -26,10 +34,9 @@ MAX_EXPECTED_PNL_CAP = 5e6      # safety cap on expected P&L (EUR)
 FORWARD_PRICE_FALLBACK_DELTA_W = -3.0   # if forward not provided, fallback p50-3 for weeks
 FORWARD_PRICE_FALLBACK_DELTA_M = -5.0   # fallback for months
 
-# Example forward prices placeholder (replace by real fetch if available)
+# SIMULATION: Example forward prices placeholder (replace by real API-fetch if available)
 FORWARD_PRICES = {
-    'week_1': 75.0, 'week_2': 73.5, 'week_3': 72.0, 'week_4': 71.0,
-    'month_1': 70.0, 'month_2': 69.0, 'month_3': 68.5
+    'week_1': 75.0, 'week_2': 78.5, 'week_3': 76.0, 'week_4': 80.0, 'month_1': 79.5, 'month_2': 88.0
 }
 
 # ---------------------------
@@ -352,7 +359,7 @@ def generate_period_signals(preds_df, forward_prices):
         reports.append(report)
 
     # Monthly signals (30-day rolling windows)
-    for i in range(3):
+    for i in range(2):
         month_start = start_date + timedelta(days=30 * i)
         month_end = month_start + timedelta(days=30)
         mask = (preds_df['timestamp'] >= month_start) & (preds_df['timestamp'] < month_end)
@@ -394,7 +401,7 @@ def generate_period_signals(preds_df, forward_prices):
 # ---------------------------
 def create_plots(signals_df):
     if signals_df is None or len(signals_df) == 0:
-        print("No signals to plot.")
+        logging.warning("No signals to plot.")
         return
     fig, axes = plt.subplots(2, 3, figsize=(16, 10))
     ax = axes.flatten()
@@ -455,22 +462,22 @@ def create_plots(signals_df):
     plt.tight_layout()
     plt.savefig(PNG_OUT, dpi=150, bbox_inches='tight')
     plt.close(fig)
-    print(f"Saved plot to {PNG_OUT}")
+    logging.info(f"Saved plot to {PNG_OUT}")
 
 # ---------------------------
 # Main
 # ---------------------------
 def main():
     ensure_output_dir(OUTPUT_DIR)
-    print("Loading predictions:", PREDICTIONS_FILE)
+    logging.info(f"Loading predictions: {PREDICTIONS_FILE}")
     preds = safe_parse_predictions(PREDICTIONS_FILE)
-    print(f"Loaded {len(preds):,} hourly predictions from {preds['timestamp'].min().isoformat()} to {preds['timestamp'].max().isoformat()}")
+    logging.info(f"Loaded {len(preds):,} hourly predictions from {preds['timestamp'].min().isoformat()} to {preds['timestamp'].max().isoformat()}")
 
     signals_df, reports, calibration = generate_period_signals(preds, FORWARD_PRICES)
 
     # Save CSV & reports
     if signals_df is None or signals_df.empty:
-        print("No signals generated. Exiting.")
+        logging.warning("No signals generated. Exiting.")
         return
 
     signals_df.to_csv(CSV_OUT, index=False)
@@ -483,21 +490,15 @@ def main():
     total_neutral = int((signals_df['signal'] == 'NEUTRAL').sum())
     total_expected_pnl = float(signals_df['expected_pnl'].sum())
 
-    print("\n" + "="*70)
-    print("SUMMARY (Part 3)")
-    print("="*70)
-    print(f"Long: {total_long} | Short: {total_short} | Neutral: {total_neutral}")
-    print(f"Total expected P&L (conservative cap applied): {total_expected_pnl:,.0f} EUR")
+    logging.info("SUMMARY (Part 3)")
+    logging.info(f"Long: {total_long} | Short: {total_short} | Neutral: {total_neutral}")
+    logging.info(f"Total expected P&L (conservative cap applied): {total_expected_pnl:,.0f} EUR")
     if calibration is not None:
-        print(f"Calibration: P10 obs {calibration['p10_coverage']*100:.0f}% (target 10%), P90 obs {calibration['p90_coverage']*100:.0f}% (target 90%), N={calibration['n']}")
+        logging.info(f"Calibration: P10 obs {calibration['p10_coverage']*100:.0f}% (target 10%), P90 obs {calibration['p90_coverage']*100:.0f}% (target 90%), N={calibration['n']}")
 
     # plots
     create_plots(signals_df)
-
-    print("\nOutputs written:")
-    print("  •", CSV_OUT)
-    print("  •", REPORT_OUT)
-    print("  •", PNG_OUT)
+    logging.info("Part 3 completed.")
 
 if __name__ == "__main__":
     main()
