@@ -1,0 +1,68 @@
+European Power Fair Value: Forecasting Day-Ahead and Translating to Prompt Curve Views
+
+We trade European power from Day-Ahead to the forward curve. Your job is to build a prototype that produces a daily fair-value view grounded in fundamentals, and shows how that view can inform prompt curve positioning/risk.
+
+Your Task (What to Build)
+1) Public Data Ingestion + Data Quality (must-have)
+Build a dataset for one European power market of your choice (e.g., DE, FR, NL, GB), using only publicly accessible sources (no synthetic data, no paid data required).
+
+Minimum data requirements:
+
+Day-Ahead prices for the chosen market (hourly)
+At least two fundamental drivers at matching granularity (examples: load, wind, solar, nuclear availability proxy, net imports/flows)
+You must:
+
+Document source endpoints (e.g., ENTSO-E Transparency API documentation is acceptable if used Postman Documenter)
+Handle timezone/DST correctly
+Implement and report data QA checks (missingness, duplicates, obvious outliers, coverage by field/time)
+2) Forecasting & Model Validation (must-have)
+Create a model that produces a DA → curve-relevant forecast. 
+Forecast next-day hourly Day-Ahead prices (or peak/base blocks), and derive next-week / next-month expected average from your forecast distribution.
+Requirements:
+
+At least one baseline (e.g., seasonal naive, last-week-same-day, simple linear model)
+At least one improved model (e.g., gradient boosting, regularised regression with engineered features, simple structural hybrid)
+Time-series appropriate validation (walk-forward / blocked CV)
+Numerical performance metrics (MAE/RMSE for price levels, plus a tail metric if you model extremes)
+3) “Prompt Curve Translation” (must-have)
+Even if you do not use forward price data, you must show how your forecast informs DA-to-curve trading.
+
+Include:
+
+A concrete method to convert forecast output into a tradable view (examples: expected delivery-period mean; distribution bands; risk premium proxy; confidence-weighted signal)
+A short explanation of what the desk would do with it (e.g., express via prompt month/quarter exposure, shape, or spreads), and what would invalidate the signal
+4) AI‑Accelerated Workflow (must-have, programmatic)
+We explicitly assess your ability to use AI/LLMs as an engineering multiplier (not as a manual chat tool). Implement one programmatic AI component that measurably reduces manual work. Examples:
+
+LLM-driven data QA rules & tests: given a schema + sample rows, the LLM proposes validation rules; your pipeline executes them and produces a QA report.
+Automated “drivers” commentary: the LLM generates a brief daily explanation only from your computed metrics (no invented numbers), with links back to the underlying tables.
+Config generation for ingestion: the LLM converts documentation/field definitions into a structured ingestion config, which your code then uses.
+Minimum bar:
+
+The LLM is called from code (API or local model)
+Prompts, outputs, and failure modes are logged
+No secrets are committed (API keys via environment variables only)
+Submission Requirements
+Length: 1–3 pages (PDF or Markdown).
+Include your full name and email address at the top of the document.
+
+You must also submit a repo or zipped folder containing:
+
+Reproducible pipeline code (scripts and/or notebook)
+A README with setup + run instructions
+requirements.txt / pyproject.toml
+Your data QA output and at least 2 figures/tables
+Your AI component implementation (prompts + code + logged outputs)
+Optional (strongly encouraged):
+Include a submission.csv containing out-of-sample predictions for a clearly defined test window, with columns:
+
+id (timestamp or timestamp+hour identifier)
+y_pred
+Evaluation Criteria
+We will assess:
+
+Dataset correctness (alignment, DST correctness, defensible cleaning)
+Forecasting rigor (validation, baselines, leakage avoidance)
+Trading relevance (clear DA→curve linkage and invalidation logic)
+Engineering quality (structure, reproducibility, documentation)
+AI/LLM used as a productivity lever (programmatic, controlled, auditable)
