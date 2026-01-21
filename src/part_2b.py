@@ -390,7 +390,41 @@ def main():
     
     # Create plots
     create_plots(cv_predictions, final_predictions, importance)
-    
+
+    eval_df = df[df['MTU (UTC)'].isin(submission['id'])].copy()
+    eval_df = eval_df.merge(submission, left_on='MTU (UTC)', right_on='id')
+
+    def calculate_detailed_metrics(y_true, y_pred):
+        """Calculates core and tail metrics for model evaluation."""
+        # Standard Metrics
+        mae = mean_absolute_error(y_true, y_pred)
+        rmse = np.sqrt(mean_squared_error(y_true, y_pred))
+        
+        # Tail MAE P90 (MAE for the 10% highest actual prices)
+        p90_thresh = np.percentile(y_true, 90)
+        mask_p90 = y_true >= p90_thresh
+        tail_mae_p90 = mean_absolute_error(y_true[mask_p90], y_pred[mask_p90])
+        
+        # Tail MAE P10 (MAE for the 10% lowest actual prices)
+        p10_thresh = np.percentile(y_true, 10)
+        mask_p10 = y_true <= p10_thresh
+        tail_mae_p10 = mean_absolute_error(y_true[mask_p10], y_pred[mask_p10])
+        
+        return {
+            'MAE': mae,
+            'RMSE': rmse,
+            'Tail MAE (P10)': tail_mae_p10,
+            'Tail MAE (P90)': tail_mae_p90
+        }
+
+    results = calculate_detailed_metrics(eval_df[TARGET], eval_df['y_pred'])
+
+    print(f"--- Performance for Submission Window ({len(eval_df)} samples) ---")
+    for metric, value in results.items():
+        logging.info(f"{metric:15}: {value:.4f} EUR/MWh")
+
+    # Save test results to CSV
+    pd.DataFrame([results]).to_csv(os.path.join('results', 'part2_test_results.csv'), index=False)
     logging.info("PART 2 COMPLETE. All results saved to results/ directory.")
 
 if __name__ == "__main__":
