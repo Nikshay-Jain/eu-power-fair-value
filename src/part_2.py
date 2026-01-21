@@ -10,9 +10,9 @@ import lightgbm as lgb
 
 import os, math, warnings, logging
 
+os.makedirs('results', exist_ok=True)
 warnings.filterwarnings('ignore')
 sns.set_style('whitegrid')
-os.makedirs('results', exist_ok=True)
 
 # Setup logging
 logging.basicConfig(
@@ -20,12 +20,6 @@ logging.basicConfig(
     format='[%(asctime)s] %(levelname)s: %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
-
-# ============================================================================
-# Configuration
-# ============================================================================
-TARGET = "Day-ahead Price (EUR/MWh)"
-
 
 class PowerFeatureEngineer:
     def __init__(self, target_col: str = "Day Ahead Price (EUR/MWh)"):
@@ -277,9 +271,11 @@ SELECTED_FEATURES = ['renewable_penetration', 'total_renewable_mw', 'renew_pen_x
        'resload_lag_24h', 'Biomass', 'Fossil Gas',
        'Fossil Brown coal/Lignite', 'residual_load_mw']
 
-# ============================================================================
+TARGET = "Day-ahead Price (EUR/MWh)"
+
+# =======================
 # Walk-Forward Validator
-# ============================================================================
+# =======================
 class WalkForwardValidator:
     def __init__(self, train_years=2, test_days=30, step_days=30):
         self.train_size = train_years * 365 * 24
@@ -293,9 +289,9 @@ class WalkForwardValidator:
             yield np.arange(start), np.arange(start, start + self.test_size)
             start += self.step
 
-# ============================================================================
+# ========
 # Metrics
-# ============================================================================
+# ========
 def calculate_metrics(y_true, y_pred):
     mask = ~(np.isnan(y_true) | np.isnan(y_pred))
     y_true, y_pred = y_true[mask], y_pred[mask]
@@ -313,9 +309,9 @@ def calculate_metrics(y_true, y_pred):
     
     return {'mae': mae, 'rmse': rmse, 'tail_mae_p90': tail_mae, 'n': len(y_true)}
 
-# ============================================================================
+# =======
 # Models
-# ============================================================================
+# =======
 def baseline_naive_24h(df, target):
     return df[target].shift(24)
 
@@ -354,9 +350,9 @@ def train_lightgbm(X_train, y_train, X_test, quantile=None):
     model = lgb.train(params, train_data, num_boost_round=500)
     return model.predict(X_test.fillna(0)), model
 
-# ============================================================================
+# =======================
 # Walk-Forward Evaluation
-# ============================================================================
+# =======================
 def run_walk_forward_cv(df, features, target):
     print("="*70)
     print("WALK-FORWARD CROSS-VALIDATION")
@@ -440,9 +436,9 @@ def run_walk_forward_cv(df, features, target):
     predictions_df = pd.concat(all_predictions, ignore_index=True)
     return summary, predictions_df
 
-# ============================================================================
+# ========================================
 # Train Final Model & Generate Submission
-# ============================================================================
+# ========================================
 def train_final_model(df, features, target, test_start='2025-11-01'):
     print("\n" + "="*70)
     print("TRAINING FINAL MODEL")
@@ -503,9 +499,9 @@ def train_final_model(df, features, target, test_start='2025-11-01'):
     
     return submission, detailed_preds, importance
 
-# ============================================================================
+# =============
 # Visualization
-# ============================================================================
+# =============
 def create_plots(cv_predictions, final_predictions, importance):
     fig = plt.figure(figsize=(16, 12))
     
@@ -563,11 +559,6 @@ def create_plots(cv_predictions, final_predictions, importance):
     ax4.set_xlabel('MAE (EUR/MWh)')
     ax4.set_title('Model Comparison (CV)')
     ax4.grid(True, alpha=0.3, axis='x')
-
-    # ax4.barh(models, mae_vals, color=['#d62728', '#ff7f0e', '#2ca02c', '#1f77b4'])
-    # ax4.set_xlabel('MAE (EUR/MWh)')
-    # ax4.set_title('Model Comparison (CV)')
-    # ax4.grid(True, alpha=0.3, axis='x')
     
     # Plot 5: Feature importance
     ax5 = plt.subplot(3, 2, 5)
@@ -594,12 +585,12 @@ def create_plots(cv_predictions, final_predictions, importance):
     ax6.grid(True, alpha=0.3)
     
     plt.tight_layout()
-    plt.savefig('results/part2_forecasting_results.png', dpi=150, bbox_inches='tight')
+    plt.savefig(os.path.join('results', 'part2_forecasting_results.png'), dpi=150, bbox_inches='tight')
     print("\n✓ Plots saved to results/part2_forecasting_results.png")
 
-# ============================================================================
+# ==============
 # Main Execution
-# ============================================================================
+# ==============
 def main():
     # Load data
     print("Loading data...")
@@ -635,7 +626,7 @@ def main():
         df=df_featured,
         target_col="Day-ahead Price (EUR/MWh)",
         resload_col="residual_load_mw",
-        output_path=os.path.join("results", "price_vs_residual_load.png")
+        output_path=os.path.join("results", "part2_price_vs_residual_load.png")
     )
     logging.info("Saved plotting outputs to results/")
 
@@ -654,16 +645,16 @@ def main():
     # summary, cv_predictions = run_walk_forward_cv(df, SELECTED_FEATURES, TARGET)
     
     # # Save CV results
-    # pd.DataFrame(summary).T.to_csv('results/part2_cv_summary.csv')
-    # cv_predictions.to_csv('results/part2_cv_predictions.csv', index=False)
+    # pd.DataFrame(summary).T.to_csv(os.path.join('results', 'part2_cv_summary.csv'))
+    # cv_predictions.to_csv(os.path.join('results', 'part2_cv_predictions.csv'), index=False)
     
     # # Train final model
     # submission, final_predictions, importance = train_final_model(df, SELECTED_FEATURES, TARGET)
     
     # # Save outputs
-    # submission.to_csv('results/submission.csv', index=False)
-    # final_predictions.to_csv('results/part2_final_predictions.csv', index=False)
-    # importance.to_csv('results/part2_feature_importance.csv', index=False)
+    # submission.to_csv(os.path.join('results', 'submission.csv'), index=False)
+    # final_predictions.to_csv(os.path.join('results', 'part2_final_predictions.csv'), index=False)
+    # importance.to_csv(os.path.join('results', 'part2_feature_importance.csv'), index=False)
     
     # # Create plots
     # create_plots(cv_predictions, final_predictions, importance)
