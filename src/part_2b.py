@@ -40,31 +40,12 @@ def corr_analysis(df: pd.DataFrame,
     # Correlation matrix
     corr_matrix = dfc.corr(method="pearson")
 
-    # Full heatmap plotting (existing logic)
-    mask = np.abs(corr_matrix) < 0.2
-    np.fill_diagonal(mask.values, False)
-    sns.set_theme(font_scale=0.7)
-    g = sns.clustermap(corr_matrix, cmap="coolwarm", vmin=-1, vmax=1, 
-                       linewidths=0.1, figsize=(14, 12), mask=mask)
-    plt.title("Feature Correlation Matrix (Clustered)", pad=80)
-    plt.savefig(os.path.join("results", f"part2_{output_prefix}_heatmap.png"), dpi=300)
-    plt.close()
-
     # Dynamic Feature Selection Logic
     target_corr = corr_matrix[target_col].drop(target_col)
     
     # Filter features where |correlation| >= threshold
     selected_features = target_corr[target_corr.abs() >= threshold].index.tolist()
     
-    # Correlation vs target bar plot (existing logic)
-    plt.figure(figsize=(8,10))
-    target_corr.sort_values().plot(kind="barh")
-    plt.title(f"Feature Correlation vs Target: {target_col}")
-    plt.axvline(threshold, color='r', linestyle='--', alpha=0.5)
-    plt.axvline(-threshold, color='r', linestyle='--', alpha=0.5)
-    plt.tight_layout()
-    plt.savefig(os.path.join("results", f"part2_{output_prefix}_target_bar.png"), dpi=300)
-    plt.close()
     return selected_features
 
 # =======================

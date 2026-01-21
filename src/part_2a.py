@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-import os, math, warnings, logging
+import os, math, warnings, logging, holidays
 
 os.makedirs('results', exist_ok=True)
 warnings.filterwarnings('ignore')
@@ -19,6 +19,7 @@ logging.basicConfig(
 class PowerFeatureEngineer:
     def __init__(self, target_col: str = "Day-ahead Price (EUR/MWh)"):
         self.target_col = target_col
+        self.de_holidays = holidays.DE()
     
     def create_all_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Create complete feature set with no NaN gaps."""
@@ -31,10 +32,8 @@ class PowerFeatureEngineer:
         df = df.sort_values("timestamp").reset_index(drop=True)
         
         df = self._create_time_features(df)
-
-        # Core features
         df = self._create_residual_load(df)
-        df = self._create_temporal_features(df)
+        df['resload_ramp'] = df['residual_load_mw'].diff()
         df = self._create_interaction_features(df)
 
         # Rolling Features with SAFE LAG (48h minimum for Day-Ahead - safe). Shift(24) is risky (requires perfect data availability).
@@ -42,20 +41,38 @@ class PowerFeatureEngineer:
         df[f"{col}_roll24_mean"] = df[col].shift(48).rolling(24).mean()
         df[f"{col}_roll24_std"] = df[col].shift(48).rolling(24).std()
 
+        df['prev_day_peak_price'] = df[self.target_col].shift(24).rolling(24, min_periods=12).max()
+        df['prev_day_peak_resload']= df['residual_load_mw'].shift(24).rolling(24, min_periods=12).max()
+
         df = self._create_lag_features(df)
 
         return df.dropna().reset_index(drop=True)
     
     def _create_time_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Create cyclical time features (critical for price shape)."""
-        df = df.copy()
+
+        ts = df['timestamp']
         df['hour'] = df['timestamp'].dt.hour
         df['weekday'] = df['timestamp'].dt.weekday
-        df['month'] = df['timestamp'].dt.month
 
-        # Cyclical encoding (best practice for ML)
+        df['month'] = df['timestamp'].dt.month
+        df["is_weekend"] = (df["weekday"] >= 5).astype(int)
+        
+        # Treat holidays as weekends for 'offpeak' logic
+        df['is_holiday'] = ts.dt.date.apply(lambda x: 1 if x in self.de_holidays else 0)
+        df['is_offpeak'] = ((df['is_weekend'] == 1) | (df['is_holiday'] == 1)).astype(int)
+
+        hols = sorted(list(self.de_holidays.keys()))
+        df['days_to_next_holiday'] = df['timestamp'].dt.date.apply(
+            lambda d: min([(hol - d).days for hol in hols if (hol - d).days >=0], default=365)
+        )
+
+        # Cyclical encoding
         df['hour_sin'] = np.sin(2 * np.pi * df['hour'] / 24)
         df['hour_cos'] = np.cos(2 * np.pi * df['hour'] / 24)
+
+        df["month_sin"] = np.sin(2 * np.pi * df["month"] / 12)
+        df["month_cos"] = np.cos(2 * np.pi * df["month"] / 12)
         return df
     
     def _create_residual_load(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -63,43 +80,34 @@ class PowerFeatureEngineer:
         Residual Load = Load - Renewables
         Most important feature (0.9 correlation with price)
         """
-        # Total renewables (actual)
-        df["wind_total_mw"] = df["Wind Onshore"].fillna(0) + df["Wind Offshore"].fillna(0)
-        df["Solar"] = df["Solar"].fillna(0)
+
+        cols_needed = ["Wind Onshore", "Wind Offshore", "Solar", "Day-ahead Total Load Forecast (MW)"]
+        missing = [c for c in cols_needed if c not in df.columns]
+        if missing:
+            logging.warning("Missing raw generation/load cols: %s — filling with zeros", missing)
+
+        wind_on = df.get("Wind Onshore", pd.Series(0, index=df.index)).fillna(0)
+        wind_off = df.get("Wind Offshore", pd.Series(0, index=df.index)).fillna(0)
+        solar = df.get("Solar", pd.Series(0, index=df.index)).fillna(0)
+        load = df.get("Day-ahead Total Load Forecast (MW)", pd.Series(0, index=df.index)).fillna(0)
+
+        df["wind_total_mw"] = wind_on + wind_off
+        df["Solar"] = solar
         df["total_renewable_mw"] = df["wind_total_mw"] + df["Solar"]
-        
-        # Residual load (actual) and penetration
-        df["residual_load_mw"] = df["Day-ahead Total Load Forecast (MW)"] - df["total_renewable_mw"]
-        df["renewable_penetration"] = df["total_renewable_mw"] / (df["Day-ahead Total Load Forecast (MW)"] + 1e-6)
-                    
-        return df
-    
-    def _create_temporal_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Time-based patterns"""
-        ts = df["timestamp"]
-        
-        df["hour"] = ts.dt.hour
-        df["day_of_week"] = ts.dt.dayofweek
-        df["month"] = ts.dt.month
-        df["is_weekend"] = (df["day_of_week"] >= 5).astype(int)
-        
-        # Cyclical encoding
-        df["hour_sin"] = np.sin(2 * np.pi * df["hour"] / 24)
-        df["hour_cos"] = np.cos(2 * np.pi * df["hour"] / 24)
-        df["dow_sin"] = np.sin(2 * np.pi * df["day_of_week"] / 7)
-        df["dow_cos"] = np.cos(2 * np.pi * df["day_of_week"] / 7)
-        df["month_sin"] = np.sin(2 * np.pi * df["month"] / 12)
-        df["month_cos"] = np.cos(2 * np.pi * df["month"] / 12)
+        df["residual_load_mw"] = load - df["total_renewable_mw"]
+        df["renewable_penetration"] = df["total_renewable_mw"] / (load + 1e-6)
         
         return df
     
     def _create_lag_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Lagged values (avoid leakage)"""
+
         # Price lags (if target exists). Add Price Lags (The "Fuel Proxy")
         # We know D-1 prices when predicting D.
         if self.target_col in df.columns:
             # Lag 24: Yesterday's price at this hour (captures recent price level)
             df['price_lag_24h'] = df[self.target_col].shift(24)
+
             # Lag 168: Last week's price (captures weekly seasonality)
             df['price_lag_168h'] = df[self.target_col].shift(168)
             
@@ -115,22 +123,16 @@ class PowerFeatureEngineer:
      
     def _create_interaction_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Capture non-linear dependencies."""
-        df = df.copy()
-        
-        # Interaction: Residual Load x Hour Harmonic (Peak vs Offpeak sensitivity)
-        # Note: Ensure _create_time_features is run FIRST so 'hour_cos' exists
-        if 'residual_load_mw' in df.columns and 'hour_cos' in df.columns:
-            df['resload_x_hour_cos'] = df['residual_load_mw'] * df['hour_cos']
-            
-        # Interaction: Solar x Time (Solar only matters during the day)
-        if 'solar_mw' in df.columns and 'hour' in df.columns:
-            # Create a simple day/night flag proxy or interacting with hour curve
-            df['solar_x_hour_sin'] = df['solar_mw'] * df['hour_sin']
-            
+
+        df["hour_x_weekend"] = df["hour"] * df["is_weekend"]
+        df["resload_x_hour"] = df["residual_load_mw"] * df["hour"]
+        df["resload_x_holiday"] = df["residual_load_mw"] * df["is_holiday"]
+
         return df
     
     def get_feature_columns(self, df: pd.DataFrame):
         """Return list of feature columns (exclude target and metadata)"""
+
         exclude = ["MTU (UTC)", "timestamp", self.target_col]
 
         # Also exclude raw generation columns
@@ -146,7 +148,7 @@ def corr_analysis(df: pd.DataFrame,
                  target_col: str,
                  timestamp_col: str = "timestamp",
                  output_prefix: str = "corr",
-                 threshold: float = 0.1):
+                 threshold: float = 0.0):
 
     # Prepare numeric-only dataframe
     dfc = df.copy()
@@ -162,11 +164,18 @@ def corr_analysis(df: pd.DataFrame,
     corr_matrix = dfc.corr(method="pearson")
 
     # Full heatmap plotting (existing logic)
-    mask = np.abs(corr_matrix) < 0.2
-    np.fill_diagonal(mask.values, False)
+    corr_matrix_clean = corr_matrix.replace([np.inf, -np.inf], np.nan).dropna(axis=0, how='all').dropna(axis=1, how='all')
+    mask_clean = np.abs(corr_matrix_clean) < 0.2
+    np.fill_diagonal(mask_clean.values, False)
     sns.set_theme(font_scale=0.7)
-    g = sns.clustermap(corr_matrix, cmap="coolwarm", vmin=-1, vmax=1, 
-                       linewidths=0.1, figsize=(14, 12), mask=mask)
+    g = sns.clustermap(
+        corr_matrix_clean,
+        cmap="coolwarm",
+        vmin=-1, vmax=1,
+        linewidths=0.1,
+        figsize=(14, 12),
+        mask=mask_clean
+    )
     plt.title("Feature Correlation Matrix (Clustered)", pad=80)
     plt.savefig(os.path.join("results", f"part2_{output_prefix}_heatmap.png"), dpi=300)
     plt.close()
