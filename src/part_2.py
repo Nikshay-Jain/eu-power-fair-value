@@ -22,7 +22,7 @@ logging.basicConfig(
 )
 
 class PowerFeatureEngineer:
-    def __init__(self, target_col: str = "Day Ahead Price (EUR/MWh)"):
+    def __init__(self, target_col: str = "Day-ahead Price (EUR/MWh)"):
         self.target_col = target_col
     
     def create_all_features(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -42,6 +42,10 @@ class PowerFeatureEngineer:
         df = self._create_lag_features(df)
         df = self._create_rolling_features(df)
         df = self._create_interaction_features(df)
+        
+        initial_len = len(df)
+        df = df.dropna().reset_index(drop=True)
+        logging.info(f"Dropped {initial_len - len(df)} rows due to initial window NaNs.")
         
         return df
     
@@ -145,9 +149,10 @@ class PowerFeatureEngineer:
 def corr_analysis(df: pd.DataFrame,
                  target_col: str,
                  timestamp_col: str = "timestamp",
-                 output_prefix: str = "corr"):
+                 output_prefix: str = "corr",
+                 threshold: float = 0.4): # Added threshold parameter
 
-    # ---- Prepare numeric-only dataframe ----
+    # Prepare numeric-only dataframe
     dfc = df.copy()
     if timestamp_col in dfc.columns:
         dfc = dfc.drop(columns=[timestamp_col])
@@ -155,41 +160,39 @@ def corr_analysis(df: pd.DataFrame,
     dfc = dfc.select_dtypes(include=[np.number])
 
     if target_col not in dfc.columns:
-        raise KeyError("Target column not found in dataframe")
+        raise KeyError(f"Target column '{target_col}' not found in dataframe")
 
-    # ---- Correlation matrix ----
+    # Correlation matrix
     corr_matrix = dfc.corr(method="pearson")
 
-    # ---- Save full heatmap using seaborn clustermap ----
-    # Mask small correlations for clarity
+    # Full heatmap plotting (existing logic)
     mask = np.abs(corr_matrix) < 0.2
-    # Set diagonal to False so main diagonal is always shown
     np.fill_diagonal(mask.values, False)
-    sns.set(font_scale=0.7)
-    g = sns.clustermap(
-        corr_matrix,
-        cmap="coolwarm",
-        vmin=-1, vmax=1,
-        linewidths=0.1,
-        figsize=(14, 12),
-        mask=mask,
-        annot=False,
-        cbar_kws={"label": "Correlation"}
-    )
+    sns.set_theme(font_scale=0.7)
+    g = sns.clustermap(corr_matrix, cmap="coolwarm", vmin=-1, vmax=1, 
+                       linewidths=0.1, figsize=(14, 12), mask=mask)
     plt.title("Feature Correlation Matrix (Clustered)", pad=80)
     plt.savefig(os.path.join("results", f"part2_{output_prefix}_heatmap.png"), dpi=300)
     plt.close()
 
-    # ---- Correlation vs target ----
-    target_corr = corr_matrix[target_col].drop(target_col).sort_values()
-
+    # Dynamic Feature Selection Logic
+    target_corr = corr_matrix[target_col].drop(target_col)
+    
+    # Filter features where |correlation| >= threshold
+    selected_features = target_corr[target_corr.abs() >= threshold].index.tolist()
+    
+    # Correlation vs target bar plot (existing logic)
     plt.figure(figsize=(8,10))
-    target_corr.plot(kind="barh")
+    target_corr.sort_values().plot(kind="barh")
     plt.title(f"Feature Correlation vs Target: {target_col}")
-    plt.xlabel("Pearson Correlation")
+    plt.axvline(threshold, color='r', linestyle='--', alpha=0.5)
+    plt.axvline(-threshold, color='r', linestyle='--', alpha=0.5)
     plt.tight_layout()
     plt.savefig(os.path.join("results", f"part2_{output_prefix}_target_bar.png"), dpi=300)
     plt.close()
+
+    logging.info(f"Programmatically selected {len(selected_features)} features with |corr| >= {threshold}")
+    return selected_features
 
 def feat_plotting(df: pd.DataFrame, 
              target_col: str,
@@ -262,17 +265,6 @@ def feat_plotting(df: pd.DataFrame,
     plt.close()
     logging.info("Saved Price vs. Residual Load plot to %s", output_path)
 
-# High correlation features (|corr| > 0.28 from analysis)
-SELECTED_FEATURES = ['renewable_penetration', 'total_renewable_mw', 'renew_pen_x_hour',
-       'Solar', 'solar_mw', 'Wind Onshore', 'wind_total_mw',
-       'Day-ahead Total Load Forecast (MW)', 'Actual Total Load (MW)',
-       'Other', 'resload_lag_168h', 'resload_rolling_mean_24h',
-       'Hydro Pumped Storage', 'Fossil Hard coal', 'resload_x_hour',
-       'resload_lag_24h', 'Biomass', 'Fossil Gas',
-       'Fossil Brown coal/Lignite', 'residual_load_mw']
-
-TARGET = "Day-ahead Price (EUR/MWh)"
-
 # =======================
 # Walk-Forward Validator
 # =======================
@@ -286,7 +278,9 @@ class WalkForwardValidator:
         n = len(df)
         start = self.train_size
         while start + self.test_size <= n:
-            yield np.arange(start), np.arange(start, start + self.test_size)
+            train_idx = np.arange(start)
+            test_idx = np.arange(start, start + self.test_size)
+            yield train_idx, test_idx
             start += self.step
 
 # ========
@@ -327,7 +321,7 @@ def train_ridge(X_train, y_train, X_test):
     model.fit(X_train_scaled, y_train)
     return model.predict(X_test_scaled), model
 
-def train_lightgbm(X_train, y_train, X_test, quantile=None):
+def train_lightgbm(X_train, y_train, X_test, quantile=None, early_stopping_rounds=500):
     params = {
         'objective': 'quantile' if quantile else 'regression',
         'metric': 'quantile' if quantile else 'rmse',
@@ -340,14 +334,29 @@ def train_lightgbm(X_train, y_train, X_test, quantile=None):
         'min_data_in_leaf': 50,
         'lambda_l1': 0.1,
         'lambda_l2': 0.1,
-        'verbose': -1
+        'verbose': -1,
+        'seed': 42
     }
     
     if quantile:
         params['alpha'] = quantile
     
-    train_data = lgb.Dataset(X_train.fillna(0), label=y_train)
-    model = lgb.train(params, train_data, num_boost_round=500)
+    # small validation split from the tail of train for early stopping
+    val_frac = 0.1
+    n_train = len(X_train)
+    if n_train > 1000:
+        cut = int(n_train * (1 - val_frac))
+        train_set = lgb.Dataset(X_train.iloc[:cut].fillna(0), label=y_train.iloc[:cut])
+        val_set = lgb.Dataset(X_train.iloc[cut:].fillna(0), label=y_train.iloc[cut:])
+        model = lgb.train(params, train_set, num_boost_round=500,
+                          valid_sets=[train_set, val_set],
+                          valid_names=['train','valid'],
+                          early_stopping_rounds=early_stopping_rounds,
+                          verbose_eval=False)
+    else:
+        train_set = lgb.Dataset(X_train.fillna(0), label=y_train)
+        model = lgb.train(params, train_set, num_boost_round=200, verbose_eval=False)
+
     return model.predict(X_test.fillna(0)), model
 
 # =======================
@@ -370,7 +379,7 @@ def run_walk_forward_cv(df, features, target):
     all_predictions = []
     
     for fold, (train_idx, test_idx) in enumerate(validator.split(df), 1):
-        train = df.iloc[:train_idx.max()].copy()
+        train = df.iloc[: train_idx.max() + 1].copy()
         test = df.iloc[test_idx].copy()
         
         y_test = test[target].values
@@ -445,8 +454,10 @@ def train_final_model(df, features, target, test_start='2025-11-01'):
     print("="*70)
     
     df['timestamp'] = pd.to_datetime(df['timestamp'])
-    train_mask = df['timestamp'] < test_start
-    test_mask = df['timestamp'] >= test_start
+    test_start_ts = pd.Timestamp(test_start, tz='UTC')
+    train_mask = df['timestamp'] < test_start_ts
+    test_mask  = df['timestamp'] >= test_start_ts
+    
     
     train = df[train_mask].copy()
     test = df[test_mask].copy()
@@ -635,11 +646,20 @@ def main():
     df['timestamp'] = pd.to_datetime(df['timestamp'])
     df = df.sort_values('timestamp').reset_index(drop=True)
     
+    TARGET = "Day-ahead Price (EUR/MWh)"
     if TARGET not in df.columns:
         raise ValueError(f"Target column '{TARGET}' not found in data")
     
-    print(f"Loaded {len(df):,} rows")
-    print(f"Date range: {df['timestamp'].min()} to {df['timestamp'].max()}")
+    logging.info(f"Loaded {len(df):,} rows")
+    logging.info(f"Date range: {df['timestamp'].min()} to {df['timestamp'].max()}")
+    
+    # Threshold set to 0.4
+    SELECTED_FEATURES = corr_analysis(
+        df=df_featured,
+        target_col=TARGET,
+        threshold=0.4
+    )
+    logging.info(f"Selected features: {SELECTED_FEATURES}")
 
     # # Walk-forward CV
     # summary, cv_predictions = run_walk_forward_cv(df, SELECTED_FEATURES, TARGET)
