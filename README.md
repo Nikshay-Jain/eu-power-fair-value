@@ -33,10 +33,6 @@ root
 │   └── featured_energy_data.csv
 │
 ├── qa_report/
-│   ├── corr_heatmap.png
-│   ├── corr_target_bar.png
-│   ├── feature_vs_target_timeseries_grid.png
-│   ├── price_vs_residual_load.png
 │   ├── qa_report_missing_by_column.csv
 │   ├── qa_report_missing_blocks.csv
 │   ├── qa_report_outlier_summary.csv
@@ -44,6 +40,10 @@ root
 │       ...
 |
 ├── results/
+│   ├── part2_corr_heatmap.png
+│   ├── part2_corr_target_bar.png
+│   ├── part2_feature_vs_target_timeseries_grid.png
+│   ├── part2_price_vs_residual_load.png
 │   ├── part2_cv_predictions.csv
 │   ├── part2_cv_summary.csv
 │   ├── part2_feature_importance.csv
