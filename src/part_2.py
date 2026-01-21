@@ -191,7 +191,7 @@ def corr_analysis(df: pd.DataFrame,
     plt.savefig(os.path.join("results", f"part2_{output_prefix}_target_bar.png"), dpi=300)
     plt.close()
 
-    logging.info(f"Programmatically selected {len(selected_features)} features with |corr| >= {threshold}")
+    logging.info(f"Selected {len(selected_features)} features with |corr| >= {threshold}")
     return selected_features
 
 def feat_plotting(df: pd.DataFrame, 
@@ -335,7 +335,8 @@ def train_lightgbm(X_train, y_train, X_test, quantile=None, early_stopping_round
         'lambda_l1': 0.1,
         'lambda_l2': 0.1,
         'verbose': -1,
-        'seed': 42
+        'seed': 42,
+        'early_stopping_rounds': early_stopping_rounds
     }
     
     if quantile:
@@ -350,9 +351,7 @@ def train_lightgbm(X_train, y_train, X_test, quantile=None, early_stopping_round
         val_set = lgb.Dataset(X_train.iloc[cut:].fillna(0), label=y_train.iloc[cut:])
         model = lgb.train(params, train_set, num_boost_round=500,
                           valid_sets=[train_set, val_set],
-                          valid_names=['train','valid'],
-                          early_stopping_rounds=early_stopping_rounds,
-                          verbose_eval=False)
+                          valid_names=['train','valid'])
     else:
         train_set = lgb.Dataset(X_train.fillna(0), label=y_train)
         model = lgb.train(params, train_set, num_boost_round=200, verbose_eval=False)
@@ -363,9 +362,7 @@ def train_lightgbm(X_train, y_train, X_test, quantile=None, early_stopping_round
 # Walk-Forward Evaluation
 # =======================
 def run_walk_forward_cv(df, features, target):
-    print("="*70)
-    print("WALK-FORWARD CROSS-VALIDATION")
-    print("="*70)
+    logging.info("WALK-FORWARD CROSS-VALIDATION")
     
     validator = WalkForwardValidator(train_years=2, test_days=30, step_days=30)
     
@@ -418,12 +415,10 @@ def run_walk_forward_cv(df, features, target):
         })
         all_predictions.append(fold_preds)
         
-        print(f"Fold {fold}: test period {test['timestamp'].min()} to {test['timestamp'].max()}")
+        logging.info(f"Fold {fold}: test period {test['timestamp'].min()} to {test['timestamp'].max()}")
     
     # Aggregate results
-    print("\n" + "="*70)
-    print("AGGREGATED CV RESULTS")
-    print("="*70)
+    logging.info("\nAGGREGATED CV RESULTS")
     
     summary = {}
     for model_name, fold_results in results.items():
@@ -437,10 +432,10 @@ def run_walk_forward_cv(df, features, target):
             'tail_mae_p90': np.mean(tail_vals)
         }
         
-        print(f"\n{model_name.upper()}")
-        print(f"  MAE:          {summary[model_name]['mae']:.2f} EUR/MWh")
-        print(f"  RMSE:         {summary[model_name]['rmse']:.2f} EUR/MWh")
-        print(f"  Tail MAE P90: {summary[model_name]['tail_mae_p90']:.2f} EUR/MWh")
+        logging.info(f"{model_name.upper()}")
+        logging.info(f"  MAE:          {summary[model_name]['mae']:.2f} EUR/MWh")
+        logging.info(f"  RMSE:         {summary[model_name]['rmse']:.2f} EUR/MWh")
+        logging.info(f"  Tail MAE P90: {summary[model_name]['tail_mae_p90']:.2f} EUR/MWh")
     
     predictions_df = pd.concat(all_predictions, ignore_index=True)
     return summary, predictions_df
@@ -449,9 +444,7 @@ def run_walk_forward_cv(df, features, target):
 # Train Final Model & Generate Submission
 # ========================================
 def train_final_model(df, features, target, test_start='2025-11-01'):
-    print("\n" + "="*70)
-    print("TRAINING FINAL MODEL")
-    print("="*70)
+    logging.info("\nTRAINING FINAL MODEL")
     
     df['timestamp'] = pd.to_datetime(df['timestamp'])
     test_start_ts = pd.Timestamp(test_start, tz='UTC')
@@ -466,10 +459,10 @@ def train_final_model(df, features, target, test_start='2025-11-01'):
     X_train = train[feat_cols]
     y_train = train[target]
     X_test = test[feat_cols]
-    
-    print(f"Training samples: {len(train):,}")
-    print(f"Test samples: {len(test):,}")
-    
+
+    logging.info(f"Training samples: {len(train):,}")
+    logging.info(f"Test samples: {len(test):,}")
+
     # Point forecast (P50)
     pred_p50, model_p50 = train_lightgbm(X_train, y_train, X_test, quantile=0.5)
     
@@ -483,8 +476,7 @@ def train_final_model(df, features, target, test_start='2025-11-01'):
         'importance': model_p50.feature_importance(importance_type='gain')
     }).sort_values('importance', ascending=False)
     
-    print("\nTop 15 Most Important Features:")
-    print(importance.head(15).to_string(index=False))
+    logging.info(f"Top 15 Most Important Features:\n{importance.head(15).to_string(index=False)}")
     
     # Create submission
     submission = pd.DataFrame({
@@ -505,8 +497,8 @@ def train_final_model(df, features, target, test_start='2025-11-01'):
     next_week_mean = pred_p50[:24*7].mean() if len(pred_p50) >= 24*7 else pred_p50.mean()
     next_month_mean = pred_p50[:24*30].mean() if len(pred_p50) >= 24*30 else pred_p50.mean()
     
-    print(f"\nNext Week Expected Mean:  {next_week_mean:.2f} EUR/MWh")
-    print(f"Next Month Expected Mean: {next_month_mean:.2f} EUR/MWh")
+    logging.info(f"Next Week Expected Mean:  {next_week_mean:.2f} EUR/MWh")
+    logging.info(f"Next Month Expected Mean: {next_month_mean:.2f} EUR/MWh")
     
     return submission, detailed_preds, importance
 
@@ -597,14 +589,14 @@ def create_plots(cv_predictions, final_predictions, importance):
     
     plt.tight_layout()
     plt.savefig(os.path.join('results', 'part2_forecasting_results.png'), dpi=150, bbox_inches='tight')
-    print("\n✓ Plots saved to results/part2_forecasting_results.png")
+    logging.info("Plots saved to results/part2_forecasting_results.png")
 
 # ==============
 # Main Execution
 # ==============
 def main():
     # Load data
-    print("Loading data...")
+    logging.info("Loading data...")
     df = pd.read_csv(os.path.join("data", "cleaned_energy_data.csv"))
         
     # Create features
@@ -659,36 +651,27 @@ def main():
         target_col=TARGET,
         threshold=0.4
     )
-    logging.info(f"Selected features: {SELECTED_FEATURES}")
+    logging.info(f"Selected features (>=0.4 correlation): {SELECTED_FEATURES}\n")
 
-    # # Walk-forward CV
-    # summary, cv_predictions = run_walk_forward_cv(df, SELECTED_FEATURES, TARGET)
+    # Walk-forward CV
+    summary, cv_predictions = run_walk_forward_cv(df, SELECTED_FEATURES, TARGET)
     
-    # # Save CV results
-    # pd.DataFrame(summary).T.to_csv(os.path.join('results', 'part2_cv_summary.csv'))
-    # cv_predictions.to_csv(os.path.join('results', 'part2_cv_predictions.csv'), index=False)
+    # Save CV results
+    pd.DataFrame(summary).T.to_csv(os.path.join('results', 'part2_cv_summary.csv'))
+    cv_predictions.to_csv(os.path.join('results', 'part2_cv_predictions.csv'), index=False)
     
-    # # Train final model
-    # submission, final_predictions, importance = train_final_model(df, SELECTED_FEATURES, TARGET)
+    # Train final model
+    submission, final_predictions, importance = train_final_model(df, SELECTED_FEATURES, TARGET)
     
-    # # Save outputs
-    # submission.to_csv(os.path.join('results', 'submission.csv'), index=False)
-    # final_predictions.to_csv(os.path.join('results', 'part2_final_predictions.csv'), index=False)
-    # importance.to_csv(os.path.join('results', 'part2_feature_importance.csv'), index=False)
+    # Save outputs
+    submission.to_csv(os.path.join('results', 'submission.csv'), index=False)
+    final_predictions.to_csv(os.path.join('results', 'part2_final_predictions.csv'), index=False)
+    importance.to_csv(os.path.join('results', 'part2_feature_importance.csv'), index=False)
     
-    # # Create plots
-    # create_plots(cv_predictions, final_predictions, importance)
+    # Create plots
+    create_plots(cv_predictions, final_predictions, importance)
     
-    # print("\n" + "="*70)
-    # print("PART 2 COMPLETE")
-    # print("="*70)
-    # print("Outputs:")
-    # print("  • results/submission.csv - Out-of-sample predictions")
-    # print("  • results/part2_cv_summary.csv - CV metrics")
-    # print("  • results/part2_cv_predictions.csv - All CV predictions")
-    # print("  • results/part2_final_predictions.csv - Test set with P10/P50/P90")
-    # print("  • results/part2_feature_importance.csv - Feature rankings")
-    # print("  • results/part2_forecasting_results.png - Visualizations")
+    logging.info("PART 2 COMPLETE. All results saved to results/ directory.")
 
 if __name__ == "__main__":
     main()
