@@ -1,6 +1,6 @@
 {
   "facts": {
-    "timestamp": "2026-01-22T00:02:51.455300Z",
+    "timestamp": "2026-01-22T00:31:42.245472Z",
     "period": "Week 1",
     "p50": 91.3182398153038,
     "p10": 90.30915654378065,
@@ -68,8 +68,8 @@
       "feature_data_file": "featured_energy_data.csv"
     }
   },
-  "generated_at": "2026-01-22T00:02:55.724081Z",
-  "narrative": "P50 is significantly above forward, indicating a positive outlook. P50 is 91.32 EUR/MWh versus a forward of 75.0 EUR/MWh, yielding an edge of +16.32 EUR/MWh.\n\nTop drivers are residual_load_mw (delta -35.1%), price_lag_24h (delta -7.1%), and Fossil Brown coal/Lignite (no reliable recent delta).\n\nWin probability stands at 97.4%. Evidence is supported by importance_file, predictions_file, signals_file, and feature_data_file.\n\nEVIDENCE:\n- importance_file\n- predictions_file\n- signals_file\n- feature_data_file",
+  "generated_at": "2026-01-22T00:31:46.332451Z",
+  "narrative": "Week 1 projects a +16.32 EUR/MWh upside, with P50 at 91.32 EUR/MWh significantly above the 75.0 EUR/MWh forward.\n\nKey drivers include residual_load_mw (delta -35.1%), price_lag_24h (delta -7.1%), and Fossil Brown coal/Lignite (insufficient data for recent delta).\n\nWin probability stands at 97.4%. Evidence is supported by importance_file, predictions_file, signals_file, and feature_data_file.\n\nEVIDENCE:\n- part2_feature_importance.csv\n- part2_final_predictions.csv\n- part3_trading_signals.csv\n- featured_energy_data.csv",
   "narrative_type": "LLM",
   "llm_info": "LLM invoked"
 }

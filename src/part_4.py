@@ -489,4 +489,4 @@ def main(use_llm_if_available=True):
     logging.info(f"\nSaved: {TXT_OUT}, {JSON_OUT}, {EVIDENCE_OUT}, log={LOG_FILE}")
 
 if __name__ == "__main__":
-    main(use_llm_if_available=True)
+    main()

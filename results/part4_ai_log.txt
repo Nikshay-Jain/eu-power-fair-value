@@ -152,3 +152,21 @@ EVIDENCE:
 - feature_data_file
 2026-01-22 05:32:55,724 - INFO - 
 Saved: results\part4_trader_commentary.txt, results\part4_trader_commentary.json, results\part4_trader_commentary_evidence.txt, log=results\part4_ai_log.txt
+2026-01-22 06:01:41,919 - INFO - Part4_improved started
+2026-01-22 06:01:42,309 - INFO - Invoking LLM with strict prompt.
+2026-01-22 06:01:42,443 - INFO - AFC is enabled with max remote calls: 10.
+2026-01-22 06:01:46,302 - INFO - HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-01-22 06:01:46,340 - INFO - --- Generated Morning Note ---
+2026-01-22 06:01:46,340 - INFO - Week 1 projects a +16.32 EUR/MWh upside, with P50 at 91.32 EUR/MWh significantly above the 75.0 EUR/MWh forward.
+
+Key drivers include residual_load_mw (delta -35.1%), price_lag_24h (delta -7.1%), and Fossil Brown coal/Lignite (insufficient data for recent delta).
+
+Win probability stands at 97.4%. Evidence is supported by importance_file, predictions_file, signals_file, and feature_data_file.
+
+EVIDENCE:
+- part2_feature_importance.csv
+- part2_final_predictions.csv
+- part3_trading_signals.csv
+- featured_energy_data.csv
+2026-01-22 06:01:46,340 - INFO - 
+Saved: results\part4_trader_commentary.txt, results\part4_trader_commentary.json, results\part4_trader_commentary_evidence.txt, log=results\part4_ai_log.txt
