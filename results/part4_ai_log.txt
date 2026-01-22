@@ -103,3 +103,52 @@ ValueError: Invalid input type <class 'langchain_core.prompts.prompt.PromptTempl
 2026-01-14 18:11:49,126 - INFO - Invoking LLM with strict prompt.
 2026-01-14 18:11:49,231 - INFO - AFC is enabled with max remote calls: 10.
 2026-01-14 18:11:55,124 - INFO - HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-01-22 05:28:47,195 - INFO - Part4_improved started
+2026-01-22 05:28:47,558 - INFO - Invoking LLM with strict prompt.
+2026-01-22 05:28:47,725 - INFO - AFC is enabled with max remote calls: 10.
+2026-01-22 05:28:51,786 - INFO - HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-01-22 05:28:51,831 - WARNING - LLM narrative failed factuality checks: [('forward', 75.0)]; skipped checks: [('Fossil Brown coal/Lignite', 'no valid delta'), ('renewable_penetration', 'not mentioned in narrative'), ('price_lag_168h', 'not mentioned in narrative')]; falling back.
+2026-01-22 05:28:51,831 - INFO - --- Generated Morning Note ---
+2026-01-22 05:28:51,831 - INFO - Bullish signal for Week 1 (+16.32 EUR/MWh vs forward). Model fair-value (P50) = 91.32 EUR/MWh; forward = 75.00 EUR/MWh.
+
+Top drivers: residual_load_mw (model importance 15.1%): -35.1% recent change. price_lag_24h (model importance 6.8%): -7.1% recent change. Fossil Brown coal/Lignite (model importance 4.3%). renewable_penetration (model importance 4.2%): +54.5% recent change. price_lag_168h (model importance 3.4%): -21.4% recent change.
+
+Win probability (adj) = 97.4%. Evidence: see 'part2_feature_importance.csv' (feature ranks) and 'part3_trading_signals.csv' (signal row). Invalidation: monitor wind/solar forecasts and forward moves > ±3 EUR/MWh.
+2026-01-22 05:28:51,831 - INFO - 
+Saved: results\part4_trader_commentary.txt, results\part4_trader_commentary.json, results\part4_trader_commentary_evidence.txt, log=results\part4_ai_log.txt
+2026-01-22 05:29:53,129 - INFO - Part4_improved started
+2026-01-22 05:29:53,461 - INFO - Invoking LLM with strict prompt.
+2026-01-22 05:29:53,529 - INFO - AFC is enabled with max remote calls: 10.
+2026-01-22 05:29:58,640 - INFO - HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-01-22 05:29:58,658 - INFO - --- Generated Morning Note ---
+2026-01-22 05:29:58,672 - INFO - P50 indicates a bullish outlook for Week 1, trading +16.32 EUR/MWh above the forward. The P50 forecast stands at 91.32 EUR/MWh, significantly exceeding the 75.0 EUR/MWh forward.
+
+Key drivers include residual_load_mw (delta -35.1%), price_lag_24h (delta -7.1%), and Fossil Brown coal/Lignite (no reliable recent delta). These represent the top three most impactful factors.
+
+The win probability for this trade is 97.4%. This assessment is supported by the underlying data and predictive models.
+
+EVIDENCE:
+- importance_file
+- predictions_file
+- signals_file
+- feature_data_file
+2026-01-22 05:29:58,672 - INFO - 
+Saved: results\part4_trader_commentary.txt, results\part4_trader_commentary.json, results\part4_trader_commentary_evidence.txt, log=results\part4_ai_log.txt
+2026-01-22 05:32:51,216 - INFO - Part4_improved started
+2026-01-22 05:32:51,503 - INFO - Invoking LLM with strict prompt.
+2026-01-22 05:32:51,572 - INFO - AFC is enabled with max remote calls: 10.
+2026-01-22 05:32:55,689 - INFO - HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-01-22 05:32:55,724 - INFO - --- Generated Morning Note ---
+2026-01-22 05:32:55,724 - INFO - P50 is significantly above forward, indicating a positive outlook. P50 is 91.32 EUR/MWh versus a forward of 75.0 EUR/MWh, yielding an edge of +16.32 EUR/MWh.
+
+Top drivers are residual_load_mw (delta -35.1%), price_lag_24h (delta -7.1%), and Fossil Brown coal/Lignite (no reliable recent delta).
+
+Win probability stands at 97.4%. Evidence is supported by importance_file, predictions_file, signals_file, and feature_data_file.
+
+EVIDENCE:
+- importance_file
+- predictions_file
+- signals_file
+- feature_data_file
+2026-01-22 05:32:55,724 - INFO - 
+Saved: results\part4_trader_commentary.txt, results\part4_trader_commentary.json, results\part4_trader_commentary_evidence.txt, log=results\part4_ai_log.txt

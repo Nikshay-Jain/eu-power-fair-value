@@ -1,62 +1,64 @@
 {
   "facts": {
-    "timestamp": "2026-01-14T12:41:49.062122Z",
+    "timestamp": "2026-01-22T00:02:51.455300Z",
     "period": "Week 1",
-    "p50": 89.53218135492895,
-    "p10": 88.24026976015772,
-    "p90": 90.8204189834999,
-    "edge": 14.532181354928952,
-    "probability": 0.9670358668062282,
+    "p50": 91.3182398153038,
+    "p10": 90.30915654378065,
+    "p90": 92.2937352878683,
+    "edge": 16.318239815303798,
+    "probability": 0.9743951993622654,
     "forward_price": 75.0,
     "signal": "LONG",
     "top_features": [
       {
         "feature": "residual_load_mw",
-        "importance": 44330.78982779384,
-        "share_pct": 33.483573182158786
+        "importance": 165105.70612311363,
+        "share_pct": 15.074357961603653
+      },
+      {
+        "feature": "price_lag_24h",
+        "importance": 74574.84988999367,
+        "share_pct": 6.808777289237781
       },
       {
         "feature": "Fossil Brown coal/Lignite",
-        "importance": 14157.289583057163,
-        "share_pct": 10.69316932219657
+        "importance": 47407.03841662407,
+        "share_pct": 4.328322041509649
       },
       {
-        "feature": "Other",
-        "importance": 9734.135146856308,
-        "share_pct": 7.352308132133444
+        "feature": "renewable_penetration",
+        "importance": 46180.21514296532,
+        "share_pct": 4.216311538559688
       },
       {
-        "feature": "Fossil Hard coal",
-        "importance": 8120.549191037193,
-        "share_pct": 6.133547454797193
-      },
-      {
-        "feature": "Fossil Gas",
-        "importance": 6292.769635006785,
-        "share_pct": 4.753003801888324
+        "feature": "price_lag_168h",
+        "importance": 37149.493196845055,
+        "share_pct": 3.391795303087985
       }
     ],
     "driver_deltas": {
       "residual_load_mw": {
         "valid": true,
-        "latest": 6591.601249999999,
-        "delta_pct": -77.50471452232783
+        "latest": 21125.6671875,
+        "delta_pct": -35.12651093688795
+      },
+      "price_lag_24h": {
+        "valid": true,
+        "latest": 87.31374999999998,
+        "delta_pct": -7.110255817581758
       },
       "Fossil Brown coal/Lignite": {
         "valid": false
       },
-      "Other": {
-        "valid": false
-      },
-      "Fossil Hard coal": {
+      "renewable_penetration": {
         "valid": true,
-        "latest": 2437.7801041666667,
-        "delta_pct": -4.6853926903948695
+        "latest": 0.6182271542878618,
+        "delta_pct": 54.54139892408918
       },
-      "Fossil Gas": {
+      "price_lag_168h": {
         "valid": true,
-        "latest": 4022.6775000000002,
-        "delta_pct": -56.48095677589191
+        "latest": 69.75135416666667,
+        "delta_pct": -21.40053375425716
       }
     },
     "evidence": {
@@ -66,8 +68,8 @@
       "feature_data_file": "featured_energy_data.csv"
     }
   },
-  "generated_at": "2026-01-14T12:41:55.170079Z",
-  "narrative": "The Week 1 P50 indicates a +14.53 EUR/MWh positive direction against the forward. Our P50 is 89.53 EUR/MWh, while the forward is 75.0 EUR/MWh.\n\nThe top drivers are residual_load_mw, Fossil Brown coal/Lignite, and Other. Residual_load_mw shows a recent delta of -77.5%, while Fossil Brown coal/Lignite and Other have no reliable recent delta.\n\nThe win probability for this position is 96.7%. Evidence is provided by the listed files.\n\nEVIDENCE:\n- importance_file: part2_feature_importance.csv\n- predictions_file: part2_final_predictions.csv\n- signals_file: part3_trading_signals.csv\n- feature_data_file: featured_energy_data.csv",
+  "generated_at": "2026-01-22T00:02:55.724081Z",
+  "narrative": "P50 is significantly above forward, indicating a positive outlook. P50 is 91.32 EUR/MWh versus a forward of 75.0 EUR/MWh, yielding an edge of +16.32 EUR/MWh.\n\nTop drivers are residual_load_mw (delta -35.1%), price_lag_24h (delta -7.1%), and Fossil Brown coal/Lignite (no reliable recent delta).\n\nWin probability stands at 97.4%. Evidence is supported by importance_file, predictions_file, signals_file, and feature_data_file.\n\nEVIDENCE:\n- importance_file\n- predictions_file\n- signals_file\n- feature_data_file",
   "narrative_type": "LLM",
   "llm_info": "LLM invoked"
 }

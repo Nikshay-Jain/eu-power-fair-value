@@ -4,7 +4,6 @@ from collections import OrderedDict
 
 import pandas as pd
 import numpy as np
-from pyparsing import col
 
 try:
     from dotenv import load_dotenv
@@ -395,7 +394,9 @@ EVIDENCE:
 - feature_data_file
 using the values in evidence_files. If value is null, print "not available".
 
-Write only the 3 paragraphs + the EVIDENCE block.
+Constraint: 
+- DO NOT mention "The model" or "The algorithm." Speak as the Desk Analyst. 
+- Write only the 3 paragraphs + the EVIDENCE block.
 """
         prompt_text = template.format(fact_json=json.dumps(fact_block, indent=2))
         logging.info("Invoking LLM with strict prompt.")
@@ -483,9 +484,9 @@ def main(use_llm_if_available=True):
         f.write("\nDeterministic note (for audit):\n")
         f.write(deterministic_note + "\n")
 
-    print("\n--- Generated Morning Note ---\n")
-    print(final_note)
-    print(f"\nSaved: {TXT_OUT}, {JSON_OUT}, {EVIDENCE_OUT}, log={LOG_FILE}")
+    logging.info("--- Generated Morning Note ---")
+    logging.info(final_note)
+    logging.info(f"\nSaved: {TXT_OUT}, {JSON_OUT}, {EVIDENCE_OUT}, log={LOG_FILE}")
 
 if __name__ == "__main__":
     main(use_llm_if_available=True)
