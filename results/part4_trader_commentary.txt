@@ -1,5 +1,0 @@
-Bullish signal for Week 1 (+16.32 EUR/MWh vs forward). Model fair-value (P50) = 91.32 EUR/MWh; forward = 75.00 EUR/MWh.
-
-Top drivers: residual_load_mw (model importance 15.1%): -35.1% recent change. price_lag_24h (model importance 6.8%): -7.1% recent change. Fossil Brown coal/Lignite (model importance 4.3%). renewable_penetration (model importance 4.2%): +54.5% recent change. price_lag_168h (model importance 3.4%): -21.4% recent change.
-
-Win probability (adj) = 97.4%. Evidence: see 'part2_feature_importance.csv' (feature ranks) and 'part3_trading_signals.csv' (signal row). Invalidation: monitor wind/solar forecasts and forward moves > ±3 EUR/MWh.
