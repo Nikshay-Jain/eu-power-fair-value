@@ -49,8 +49,8 @@ root
 ├── .gitignore
 ├── experiments.ipynb   # Exploration notebook
 ├── requirements.txt
-├── Report.md
-└── README.md
+├── README.md
+└── Report.md           # Refer for in-depth info
 ```
 
 ---

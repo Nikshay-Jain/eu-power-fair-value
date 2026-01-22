@@ -1,6 +1,6 @@
 {
   "facts": {
-    "timestamp": "2026-01-22T00:31:42.245472Z",
+    "timestamp": "2026-01-22T06:05:19.727804Z",
     "period": "Week 1",
     "p50": 91.3182398153038,
     "p10": 90.30915654378065,
@@ -68,8 +68,8 @@
       "feature_data_file": "featured_energy_data.csv"
     }
   },
-  "generated_at": "2026-01-22T00:31:46.332451Z",
-  "narrative": "Week 1 projects a +16.32 EUR/MWh upside, with P50 at 91.32 EUR/MWh significantly above the 75.0 EUR/MWh forward.\n\nKey drivers include residual_load_mw (delta -35.1%), price_lag_24h (delta -7.1%), and Fossil Brown coal/Lignite (insufficient data for recent delta).\n\nWin probability stands at 97.4%. Evidence is supported by importance_file, predictions_file, signals_file, and feature_data_file.\n\nEVIDENCE:\n- part2_feature_importance.csv\n- part2_final_predictions.csv\n- part3_trading_signals.csv\n- featured_energy_data.csv",
-  "narrative_type": "LLM",
+  "generated_at": "2026-01-22T06:05:26.014341Z",
+  "narrative": "Bullish signal for Week 1 (+16.32 EUR/MWh vs forward). Model fair-value (P50) = 91.32 EUR/MWh; forward = 75.00 EUR/MWh.\n\nTop drivers: residual_load_mw (model importance 15.1%): -35.1% recent change. price_lag_24h (model importance 6.8%): -7.1% recent change. Fossil Brown coal/Lignite (model importance 4.3%). renewable_penetration (model importance 4.2%): +54.5% recent change. price_lag_168h (model importance 3.4%): -21.4% recent change.\n\nWin probability (adj) = 97.4%. Evidence: see 'part2_feature_importance.csv' (feature ranks) and 'part3_trading_signals.csv' (signal row). Invalidation: monitor wind/solar forecasts and forward moves > \u00b13 EUR/MWh.",
+  "narrative_type": "DETERMINISTIC",
   "llm_info": "LLM invoked"
 }

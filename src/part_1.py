@@ -23,8 +23,8 @@ os.makedirs('qa_report', exist_ok=True)
 SOURCE_METADATA = {
     "url": "https://transparency.entsoe.eu/",
     "description": "ENTSO-E Transparency Platform - European electricity market data",
+    "Market Data": "ENTSO-E / Transmission / Available Transfer Capacity [4.1.A]",
     "DA Prices": "ENTSO-E / Transmission / Day Ahead Prices [12.1.D]",
-    "Actual Load": "ENTSO-E / Load / Actual Total Load [6.1.A]",
     "Load Forecast": "ENTSO-E / Load / Day Ahead Total Load Forecast [6.1.B]",
     "Generation": "ENTSO-E / Generation / Actual Generation per Production Type [16.1.B&C]",
     "BZN Code": "DE-LU (10Y1001A1001A83F)"
