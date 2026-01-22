@@ -179,8 +179,6 @@ Note: If no API key is provided, the pipeline still runs with deterministic comm
 
 ## Running the Pipeline
 
-Execute sequentially:
-
 ```
 python src/main.py
 ```
