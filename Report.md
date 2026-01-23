@@ -249,7 +249,7 @@ This confirms that the model has captured the fundamental physics of power prici
 **Why LightGBM over alternatives:**
 1. **Handles non-linearity**: Captures merit-order curve convexity without manual feature engineering
 2. **Robust to feature scale**: No need for normalization (unlike Ridge regression)
-3. **Efficient with large datasets**: 87k hourly samples train in seconds
+3. **Efficient with large datasets**: 3 years of hourly samples train in seconds
 4. **Built-in regularization**: L1/L2 penalties, max_depth, min_data_in_leaf prevent overfitting
 5. **Quantile regression**: Native support for P10/P90 prediction (uncertainty bands)
 
@@ -1332,61 +1332,6 @@ python src/main.py  # Runs full pipeline
    - Balancing responsibilities (need generation or load to offset)
    - Nomination deadlines
    - Intraday market hedging
-
----
-
-## 6. Key Deliverables
-
-### Data Products
-
-| File | Description | Size | Purpose |
-|------|-------------|------|---------|
-| `data/cleaned_energy_data.csv` | QA-cleaned hourly dataset (2015-2025) | ~87k rows | Input to feature engineering |
-| `data/featured_energy_data.csv` | Feature-engineered dataset (67 features) | ~87k rows | Training data for models |
-
-### Model Artifacts
-
-| File | Description | Format | Purpose |
-|------|-------------|--------|---------|
-| `results/part2_cv_summary.csv` | Cross-validation metrics (4 models) | CSV | Model comparison |
-| `results/part2_test_results.csv` | Test set performance | CSV | Out-of-sample evaluation |
-| `results/part2_feature_importance.csv` | LightGBM feature importance (67 features) | CSV | Interpretability |
-| `results/part2_final_predictions.csv` | Hourly P10/P50/P90 forecasts (test set) | CSV | Probabilistic forecasts |
-| `results/submission.csv` | Final predictions (`id`, `y_pred`) | CSV | **Submission file** |
-
-### Trading Signals
-
-| File | Description | Format | Purpose |
-|------|-------------|--------|---------|
-| `results/part3_trading_signals.csv` | 6 prompt curve signals (Week 1-4, Month 1-2) | CSV | Machine-readable signals |
-| `results/part3_trading_reports.txt` | Detailed trading reports (6 sections) | TXT | Human-readable analysis |
-| `results/part3_trading_signals.png` | 6-panel visual dashboard | PNG | Quick visual summary |
-
-### AI Commentary
-
-| File | Description | Format | Purpose |
-|------|-------------|--------|---------|
-| `results/part4_trader_commentary.txt` | Daily morning note (3 paragraphs) | TXT | Executive summary |
-| `results/part4_trader_commentary.json` | Full payload (facts + narrative + metadata) | JSON | Programmatic access |
-| `results/part4_trader_commentary_evidence.txt` | Evidence & audit trail | TXT | Fact verification |
-| `results/part4_ai_log.txt` | LLM prompts, responses, fact-check results | TXT | AI audit log |
-
-### Visualizations
-
-| File | Description | Dimensions | Purpose |
-|------|-------------|-----------|---------|
-| `results/part2_corr_heatmap.png` | Clustered correlation matrix | 14×12 in | Feature relationships |
-| `results/part2_corr_target_bar.png` | Feature vs target correlation | 8×10 in | Driver ranking |
-| `results/part2_price_vs_residual_load.png` | Merit order curve | 8×6 in | Economic validation |
-| `results/part2_feature_vs_target_timeseries_grid.png` | Time series overlays (all features) | 14×N in | Temporal patterns |
-| `results/part2_forecasting_results.png` | 6-panel forecast dashboard | 16×12 in | Model performance |
-| `results/part3_trading_signals.png` | 6-panel trading dashboard | 16×10 in | Signal summary |
-
-### QA Reports
-
-| Directory | Contents | Purpose |
-|-----------|----------|---------|
-| `qa_reports/` | Missingness, duplicates, outliers, coverage | Data quality documentation |
 
 ---
 
