@@ -81,7 +81,7 @@ All QA outputs are saved in `qa_reports/` directory with timestamped reports.
 
 **Primary Output**
 
-- `data/cleaned_energy_data.csv` — QA-cleaned hourly dataset (2015-2025)
+- `data/cleaned_energy_data.csv` — QA-cleaned hourly dataset (2023-2025)
 - `qa_reports/` — Comprehensive QA reports folder
 
 ---
@@ -366,8 +366,8 @@ train_mask = timestamp < '2025-11-01'
 test_mask = timestamp >= '2025-11-01'
 ```
 
-**Training Set**: 2015-01-01 to 2025-10-31 (~93,000 hours)  
-**Test Set**: 2025-11-01 to 2025-12-31 (1,489 hours)
+**Training Set**: 2023-01-01 to 2025-10-31 (~16,000 hours)  
+**Test Set**: 2025-11-01 to 2026-01-01 (1,489 hours)
 
 #### Quantile Regression Implementation
 
@@ -1355,3 +1355,4 @@ Learnt a lot!
 
 **Repository**: https://github.com/Nikshay-Jain/eu-power-fair-value  
 **Contact**: thenikshayjain@gmail.com
+
