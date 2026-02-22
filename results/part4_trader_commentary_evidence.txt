@@ -1,0 +1,27 @@
+Evidence & pointers for trader verification
+=========================================
+importance_file: results/part2_feature_importance.csv
+predictions_file: results/part2_final_predictions.csv
+signals_file: results/part3_trading_signals.csv
+feature_data_file: results/featured_energy_data.csv
+
+Top features (global importance):
+  - residual_load_mw: importance=165105.71, share=15.1%
+  - price_lag_24h: importance=74574.85, share=6.8%
+  - Fossil Brown coal/Lignite: importance=47407.04, share=4.3%
+  - renewable_penetration: importance=46180.22, share=4.2%
+  - price_lag_168h: importance=37149.49, share=3.4%
+
+Driver deltas (computed from data/featured_energy_data.csv if available):
+  - residual_load_mw: latest=21125.667, delta_pct=-35.13%
+  - price_lag_24h: latest=87.314, delta_pct=-7.11%
+  - Fossil Brown coal/Lignite: no reliable recent data
+  - renewable_penetration: latest=0.618, delta_pct=+54.54%
+  - price_lag_168h: latest=69.751, delta_pct=-21.40%
+
+Deterministic note (for audit):
+Bullish signal for Week 1 (+16.32 EUR/MWh vs forward). Model fair-value (P50) = 91.32 EUR/MWh; forward = 75.00 EUR/MWh.
+
+Top drivers: residual_load_mw (model importance 15.1%): -35.1% recent change. price_lag_24h (model importance 6.8%): -7.1% recent change. Fossil Brown coal/Lignite (model importance 4.3%). renewable_penetration (model importance 4.2%): +54.5% recent change. price_lag_168h (model importance 3.4%): -21.4% recent change.
+
+Win probability (adj) = 97.4%. Evidence: see 'part2_feature_importance.csv' (feature ranks) and 'part3_trading_signals.csv' (signal row). Invalidation: monitor wind/solar forecasts and forward moves > ±3 EUR/MWh.

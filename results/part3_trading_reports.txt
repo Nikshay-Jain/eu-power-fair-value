@@ -1,0 +1,238 @@
+======================================================================
+TRADING SIGNAL: Week 1
+======================================================================
+DELIVERY: 2025-11-01T00:00:00+00:00 -> 2025-11-08T00:00:00+00:00 (168 hours)
+
+FORECAST (MC aggregated):
+  P50: 91.32 EUR/MWh
+  P10: 90.31 EUR/MWh
+  P90: 92.29 EUR/MWh
+  Std: 0.78 EUR/MWh
+
+MARKET:
+  Forward price: 75.00 EUR/MWh
+  Edge: +16.32 EUR/MWh
+  Sharpe: 20.82
+  Win Prob (adj): 97.4%
+
+RECOMMENDATION:
+  Signal: LONG
+  Position: 18.98 MW (baseload)
+  Expected P&L (conservative): 36,415 EUR
+
+RISK MANAGEMENT:
+  Action: REDUCE_50%
+  Alerts:
+    - P10 miscalibrated (27%)
+
+INVALIDATION TRIGGERS (examples):
+  • Wind forecast revision >20%
+  • 3-day forecast error >15 EUR/MWh
+  • Forward price converges to forecast
+
+CALIBRATION (hourly Evidence):
+  P10 observed: 27% (target 10%)  N=1487
+  P90 observed: 93% (target 90%)
+
+DESK ACTION: BUY 19 MW Week 1 @ 75.00
+
+
+
+======================================================================
+TRADING SIGNAL: Week 2
+======================================================================
+DELIVERY: 2025-11-08T00:00:00+00:00 -> 2025-11-15T00:00:00+00:00 (168 hours)
+
+FORECAST (MC aggregated):
+  P50: 105.44 EUR/MWh
+  P10: 104.54 EUR/MWh
+  P90: 106.28 EUR/MWh
+  Std: 0.68 EUR/MWh
+
+MARKET:
+  Forward price: 78.50 EUR/MWh
+  Edge: +26.94 EUR/MWh
+  Sharpe: 39.38
+  Win Prob (adj): 97.7%
+
+RECOMMENDATION:
+  Signal: LONG
+  Position: 19.10 MW (baseload)
+  Expected P&L (conservative): 60,494 EUR
+
+RISK MANAGEMENT:
+  Action: REDUCE_50%
+  Alerts:
+    - P10 miscalibrated (27%)
+
+INVALIDATION TRIGGERS (examples):
+  • Wind forecast revision >20%
+  • 3-day forecast error >15 EUR/MWh
+  • Forward price converges to forecast
+
+CALIBRATION (hourly Evidence):
+  P10 observed: 27% (target 10%)  N=1487
+  P90 observed: 93% (target 90%)
+
+DESK ACTION: BUY 19 MW Week 2 @ 78.50
+
+
+
+======================================================================
+TRADING SIGNAL: Week 3
+======================================================================
+DELIVERY: 2025-11-15T00:00:00+00:00 -> 2025-11-22T00:00:00+00:00 (168 hours)
+
+FORECAST (MC aggregated):
+  P50: 114.82 EUR/MWh
+  P10: 114.01 EUR/MWh
+  P90: 115.64 EUR/MWh
+  Std: 0.64 EUR/MWh
+
+MARKET:
+  Forward price: 76.00 EUR/MWh
+  Edge: +38.82 EUR/MWh
+  Sharpe: 60.91
+  Win Prob (adj): 97.9%
+
+RECOMMENDATION:
+  Signal: LONG
+  Position: 19.15 MW (baseload)
+  Expected P&L (conservative): 87,433 EUR
+
+RISK MANAGEMENT:
+  Action: REDUCE_50%
+  Alerts:
+    - P10 miscalibrated (27%)
+
+INVALIDATION TRIGGERS (examples):
+  • Wind forecast revision >20%
+  • 3-day forecast error >15 EUR/MWh
+  • Forward price converges to forecast
+
+CALIBRATION (hourly Evidence):
+  P10 observed: 27% (target 10%)  N=1487
+  P90 observed: 93% (target 90%)
+
+DESK ACTION: BUY 19 MW Week 3 @ 76.00
+
+
+
+======================================================================
+TRADING SIGNAL: Week 4
+======================================================================
+DELIVERY: 2025-11-22T00:00:00+00:00 -> 2025-11-29T00:00:00+00:00 (168 hours)
+
+FORECAST (MC aggregated):
+  P50: 120.88 EUR/MWh
+  P10: 119.13 EUR/MWh
+  P90: 122.57 EUR/MWh
+  Std: 1.33 EUR/MWh
+
+MARKET:
+  Forward price: 80.00 EUR/MWh
+  Edge: +40.88 EUR/MWh
+  Sharpe: 30.83
+  Win Prob (adj): 95.7%
+
+RECOMMENDATION:
+  Signal: LONG
+  Position: 18.27 MW (baseload)
+  Expected P&L (conservative): 87,814 EUR
+
+RISK MANAGEMENT:
+  Action: REDUCE_50%
+  Alerts:
+    - P10 miscalibrated (27%)
+
+INVALIDATION TRIGGERS (examples):
+  • Wind forecast revision >20%
+  • 3-day forecast error >15 EUR/MWh
+  • Forward price converges to forecast
+
+CALIBRATION (hourly Evidence):
+  P10 observed: 27% (target 10%)  N=1487
+  P90 observed: 93% (target 90%)
+
+DESK ACTION: BUY 18 MW Week 4 @ 80.00
+
+
+
+======================================================================
+TRADING SIGNAL: Month 1
+======================================================================
+DELIVERY: 2025-11-01T00:00:00+00:00 -> 2025-12-01T00:00:00+00:00 (720 hours)
+
+FORECAST (MC aggregated):
+  P50: 106.86 EUR/MWh
+  P10: 106.32 EUR/MWh
+  P90: 107.39 EUR/MWh
+  Std: 0.42 EUR/MWh
+
+MARKET:
+  Forward price: 79.50 EUR/MWh
+  Edge: +27.36 EUR/MWh
+  Sharpe: 54.71
+  Win Prob (adj): 98.0%
+
+RECOMMENDATION:
+  Signal: LONG
+  Position: 19.20 MW (baseload)
+  Expected P&L (conservative): 264,729 EUR
+
+RISK MANAGEMENT:
+  Action: REDUCE_50%
+  Alerts:
+    - P10 miscalibrated (27%)
+
+INVALIDATION TRIGGERS (examples):
+  • Wind forecast revision >20%
+  • 3-day forecast error >15 EUR/MWh
+  • Forward price converges to forecast
+
+CALIBRATION (hourly Evidence):
+  P10 observed: 27% (target 10%)  N=1487
+  P90 observed: 93% (target 90%)
+
+DESK ACTION: BUY 19 MW Month 1 @ 79.50
+
+
+
+======================================================================
+TRADING SIGNAL: Month 2
+======================================================================
+DELIVERY: 2025-12-01T00:00:00+00:00 -> 2025-12-31T00:00:00+00:00 (720 hours)
+
+FORECAST (MC aggregated):
+  P50: 97.88 EUR/MWh
+  P10: 97.30 EUR/MWh
+  P90: 98.47 EUR/MWh
+  Std: 0.45 EUR/MWh
+
+MARKET:
+  Forward price: 88.00 EUR/MWh
+  Edge: +9.88 EUR/MWh
+  Sharpe: 19.76
+  Win Prob (adj): 98.0%
+
+RECOMMENDATION:
+  Signal: LONG
+  Position: 19.20 MW (baseload)
+  Expected P&L (conservative): 95,612 EUR
+
+RISK MANAGEMENT:
+  Action: REDUCE_50%
+  Alerts:
+    - P10 miscalibrated (27%)
+
+INVALIDATION TRIGGERS (examples):
+  • Wind forecast revision >20%
+  • 3-day forecast error >15 EUR/MWh
+  • Forward price converges to forecast
+
+CALIBRATION (hourly Evidence):
+  P10 observed: 27% (target 10%)  N=1487
+  P90 observed: 93% (target 90%)
+
+DESK ACTION: BUY 19 MW Month 2 @ 88.00
+
